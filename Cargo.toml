@@ -30,6 +30,7 @@ bs58 = "0.5"
 flate2 = "1"
 base64 = "0.22"
 ureq = { version = "2.10", features = ["json"] }
+curve25519-dalek = "4"
 
 [profile.release]
 lto = "thin"

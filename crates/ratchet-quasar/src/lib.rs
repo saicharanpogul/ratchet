@@ -21,12 +21,13 @@
 //! stabilises the loader can either live upstream in the Quasar
 //! repository or be added to this crate.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use ratchet_core::{
     check, AccountDef, CheckContext, Discriminator, FieldDef, InstructionDef, ProgramSurface,
     Report, Rule,
 };
+use serde::{Deserialize, Serialize};
 
 /// Run the default rule set against a pair of Quasar-derived surfaces.
 ///
@@ -103,6 +104,73 @@ pub fn detect_quasar_project(root: impl AsRef<Path>) -> bool {
         }
     }
     false
+}
+
+/// Where Quasar writes its emitted IDL(s) — convention matches Anchor's
+/// `target/idl/<program>.json`.
+pub const QUASAR_IDL_DIR_SUFFIX: [&str; 2] = ["target", "idl"];
+
+/// Locate the Anchor-compatible IDL that Quasar emits.
+///
+/// Quasar currently piggy-backs on Anchor's IDL format, so a Quasar
+/// project diffs transparently with `ratchet-anchor`. This function
+/// returns the default expected path so tooling doesn't have to
+/// reinvent the convention.
+pub fn default_idl_path(project_root: impl AsRef<Path>, program_name: &str) -> PathBuf {
+    let mut p = project_root.as_ref().to_path_buf();
+    for seg in QUASAR_IDL_DIR_SUFFIX {
+        p.push(seg);
+    }
+    p.push(format!("{program_name}.json"));
+    p
+}
+
+/// Forward-declared schema type that Quasar's compiler can target once
+/// its native schema format stabilises. Today it carries a plain
+/// [`ProgramSurface`] (since Quasar emits Anchor-compatible IDLs that
+/// lower cleanly to `ProgramSurface`); when Quasar grows features the
+/// IDL doesn't express, this struct gains fields and the normalizer
+/// below learns about them.
+///
+/// The `spec` field is a version string so consumers can refuse loads
+/// with incompatible layouts in the future — today only `"0.0.0"` is
+/// accepted.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuasarSchema {
+    /// Schema version tag. Bumps when `surface` sub-structure or
+    /// additional fields break compatibility.
+    pub spec: String,
+    /// Program surface in the framework-agnostic IR.
+    pub surface: ProgramSurface,
+}
+
+/// Semver-ish tag the current forward-declared schema uses. Bumps when
+/// additional fields are introduced.
+pub const CURRENT_SCHEMA_SPEC: &str = "0.0.0";
+
+impl QuasarSchema {
+    /// Wrap a surface into a current-spec schema.
+    pub fn of(surface: ProgramSurface) -> Self {
+        Self {
+            spec: CURRENT_SCHEMA_SPEC.into(),
+            surface,
+        }
+    }
+
+    /// Parse a `QuasarSchema` JSON blob. Rejects unknown spec versions
+    /// with a clear error so out-of-date tooling fails loud rather than
+    /// silently mis-interpreting future fields.
+    pub fn from_json(s: &str) -> anyhow::Result<Self> {
+        let schema: QuasarSchema =
+            serde_json::from_str(s).map_err(|e| anyhow::anyhow!("parse quasar schema: {e}"))?;
+        if schema.spec != CURRENT_SCHEMA_SPEC {
+            anyhow::bail!(
+                "unsupported Quasar schema spec {:?}; this ratchet expects {CURRENT_SCHEMA_SPEC}",
+                schema.spec
+            );
+        }
+        Ok(schema)
+    }
 }
 
 #[cfg(test)]
@@ -189,5 +257,31 @@ mod tests {
         std::fs::write(dir.join("Quasar.toml"), "# marker").unwrap();
         assert!(detect_quasar_project(&dir));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn default_idl_path_matches_anchor_convention() {
+        let p = default_idl_path("/tmp/proj", "vault");
+        assert_eq!(
+            p,
+            std::path::PathBuf::from("/tmp/proj/target/idl/vault.json")
+        );
+    }
+
+    #[test]
+    fn quasar_schema_round_trip() {
+        let surface = SurfaceBuilder::new("vault").build();
+        let schema = QuasarSchema::of(surface);
+        let json = serde_json::to_string(&schema).unwrap();
+        let back = QuasarSchema::from_json(&json).unwrap();
+        assert_eq!(back.spec, CURRENT_SCHEMA_SPEC);
+        assert_eq!(back.surface.name, "vault");
+    }
+
+    #[test]
+    fn quasar_schema_rejects_future_spec() {
+        let json = r#"{"spec":"9.9.9","surface":{"name":"x"}}"#;
+        let err = QuasarSchema::from_json(json).unwrap_err();
+        assert!(format!("{err}").contains("unsupported"));
     }
 }

@@ -460,6 +460,7 @@ dependencies = [
  "ratchet-anchor",
  "ratchet-core",
  "ratchet-lock",
+ "serde",
  "serde_json",
 ]
 

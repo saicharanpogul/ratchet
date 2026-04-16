@@ -3,10 +3,11 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand};
 use ratchet_anchor::{fetch_idl_account, load_idl_from_file, normalize, Cluster};
 use ratchet_core::{check, default_rules, CheckContext, ProgramSurface, Report, Severity};
+use ratchet_lock::{Lockfile, DEFAULT_FILENAME};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -24,9 +25,13 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Compare a new program surface against the deployed one or a prior
-    /// snapshot, and report every breaking or unsafe change.
+    /// Compare a new program surface against the deployed one, a prior
+    /// snapshot, or a committed `ratchet.lock`, and report every breaking
+    /// or unsafe change.
     CheckUpgrade(CheckUpgradeArgs),
+    /// Write a `ratchet.lock` snapshot from a program surface. The snapshot
+    /// is what `check-upgrade --lock` later compares against.
+    Lock(LockArgs),
     /// List every registered rule with its one-line description.
     ListRules,
 }
@@ -41,6 +46,10 @@ struct CheckUpgradeArgs {
     /// Path to the old (deployed / baseline) IDL JSON.
     #[arg(long, group = "old_source")]
     old: Option<PathBuf>,
+
+    /// Path to a committed `ratchet.lock` to use as the baseline.
+    #[arg(long, group = "old_source")]
+    lock: Option<PathBuf>,
 
     /// Program id whose on-chain IDL should be fetched as the baseline.
     /// Automatic IDL-account derivation is deferred; use `--idl-account`.
@@ -59,6 +68,30 @@ struct CheckUpgradeArgs {
     /// for multiple flags: `--unsafe allow-rename --unsafe allow-type-change`.
     #[arg(long = "unsafe", value_name = "FLAG")]
     unsafes: Vec<String>,
+
+    /// Account name that has a declared migration (Anchor 1.0+
+    /// `Migration<From, To>` or a manual `realloc` handler). Repeatable.
+    #[arg(long = "migrated-account", value_name = "NAME")]
+    migrated_accounts: Vec<String>,
+}
+
+#[derive(Debug, Args)]
+struct LockArgs {
+    /// Source IDL path. Mutually exclusive with `--idl-account`.
+    #[arg(long, group = "source")]
+    from_idl: Option<PathBuf>,
+
+    /// IDL account pubkey to fetch. Mutually exclusive with `--from-idl`.
+    #[arg(long, group = "source")]
+    idl_account: Option<String>,
+
+    /// Cluster shorthand (mainnet, devnet, testnet) or RPC URL.
+    #[arg(long, default_value = "mainnet")]
+    cluster: String,
+
+    /// Output path for the lockfile.
+    #[arg(long, default_value = DEFAULT_FILENAME)]
+    out: PathBuf,
 }
 
 fn main() -> ExitCode {
@@ -75,6 +108,7 @@ fn main() -> ExitCode {
 fn run(cli: Cli) -> Result<i32> {
     match cli.command {
         Command::CheckUpgrade(args) => check_upgrade(args, cli.json),
+        Command::Lock(args) => lock(args, cli.json),
         Command::ListRules => {
             list_rules(cli.json);
             Ok(0)
@@ -118,6 +152,9 @@ fn check_upgrade(args: CheckUpgradeArgs, as_json: bool) -> Result<i32> {
     for flag in &args.unsafes {
         ctx = ctx.with_allow(flag.trim_start_matches("--"));
     }
+    for name in &args.migrated_accounts {
+        ctx = ctx.with_migration(name);
+    }
 
     let rules = default_rules();
     let report = check(&old, &new, &ctx, &rules);
@@ -141,6 +178,11 @@ fn load_old(args: &CheckUpgradeArgs) -> Result<ProgramSurface> {
         let idl = load_idl_from_file(path)?;
         return normalize(&idl);
     }
+    if let Some(path) = &args.lock {
+        let lock =
+            Lockfile::read(path).with_context(|| format!("reading lockfile {}", path.display()))?;
+        return Ok(lock.surface);
+    }
     if let Some(pubkey) = &args.idl_account {
         let cluster = Cluster::parse(&args.cluster);
         let idl = fetch_idl_account(&cluster, pubkey)?;
@@ -152,7 +194,49 @@ fn load_old(args: &CheckUpgradeArgs) -> Result<ProgramSurface> {
              pass --idl-account <PUBKEY> explicitly (see `solana-verify` output or Solscan)"
         );
     }
-    bail!("need one of --old <PATH>, --idl-account <PUBKEY>, or --program <PID>")
+    bail!("need one of --old <PATH>, --lock <PATH>, --idl-account <PUBKEY>, or --program <PID>")
+}
+
+fn lock(args: LockArgs, as_json: bool) -> Result<i32> {
+    let surface = if let Some(path) = &args.from_idl {
+        normalize(&load_idl_from_file(path)?)?
+    } else if let Some(pubkey) = &args.idl_account {
+        let cluster = Cluster::parse(&args.cluster);
+        normalize(&fetch_idl_account(&cluster, pubkey)?)?
+    } else {
+        bail!("need one of --from-idl <PATH> or --idl-account <PUBKEY>");
+    };
+
+    let lockfile = Lockfile::of(surface);
+    lockfile
+        .write(&args.out)
+        .with_context(|| format!("writing {}", args.out.display()))?;
+
+    if as_json {
+        println!(
+            "{}",
+            serde_json::json!({
+                "ok": true,
+                "wrote": args.out.display().to_string(),
+                "name": lockfile.surface.name,
+                "program_id": lockfile.surface.program_id,
+            })
+        );
+    } else {
+        println!(
+            "wrote {} (program `{}`{}{} accounts, {} instructions)",
+            args.out.display(),
+            lockfile.surface.name,
+            match &lockfile.surface.program_id {
+                Some(pid) => format!(", {pid}, "),
+                None => ", ".into(),
+            },
+            lockfile.surface.accounts.len(),
+            lockfile.surface.instructions.len()
+        );
+    }
+
+    Ok(0)
 }
 
 fn render_human(report: &Report) {

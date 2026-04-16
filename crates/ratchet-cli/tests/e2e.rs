@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use ratchet_anchor::{load_idl_from_file, normalize};
 use ratchet_core::{check, default_rules, CheckContext, Severity};
+use ratchet_lock::Lockfile;
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -79,6 +80,23 @@ fn additive_upgrade_is_safe() {
             .any(|f| f.rule_id == "R012" && f.message.contains("Cross")),
         "expected R012 to record the Side::Cross append"
     );
+}
+
+#[test]
+fn lockfile_round_trip_as_baseline() {
+    // Emulate `ratchet lock --from-idl vault_v1.json` writing, then
+    // `check-upgrade --lock ... --new vault_v2_breaking.json` reading.
+    let v1 = normalize(&load_idl_from_file(fixture("vault_v1.json")).unwrap()).unwrap();
+    let lock = Lockfile::of(v1);
+    let json = lock.to_json().unwrap();
+
+    let reread = Lockfile::from_json(&json).unwrap();
+    let new = normalize(&load_idl_from_file(fixture("vault_v2_breaking.json")).unwrap()).unwrap();
+    let report = check(&reread.surface, &new, &CheckContext::new(), &default_rules());
+
+    assert_eq!(report.exit_code(), 1);
+    assert_eq!(report.max_severity(), Some(Severity::Breaking));
+    assert!(report.findings.iter().any(|f| f.rule_id == "R006"));
 }
 
 #[test]

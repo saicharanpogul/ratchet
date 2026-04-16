@@ -22,4 +22,5 @@ ratchet-anchor = { path = "../ratchet-anchor", version = "0.0.1" }
 ratchet-lock = { path = "../ratchet-lock", version = "0.0.1" }
 anyhow.workspace = true
 clap.workspace = true
+serde.workspace = true
 serde_json.workspace = true

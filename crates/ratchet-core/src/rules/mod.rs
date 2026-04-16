@@ -7,10 +7,12 @@
 use crate::rule::Rule;
 
 pub mod r001_account_field_reorder;
+pub mod r002_account_field_retype;
 
 pub use r001_account_field_reorder::AccountFieldReorder;
+pub use r002_account_field_retype::AccountFieldRetype;
 
 /// Every rule that ships with ratchet. Order matches the `RXXX` ids.
 pub fn all() -> Vec<Box<dyn Rule>> {
-    vec![Box::new(AccountFieldReorder)]
+    vec![Box::new(AccountFieldReorder), Box::new(AccountFieldRetype)]
 }

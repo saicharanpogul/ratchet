@@ -11,7 +11,7 @@ pub mod normalize;
 pub mod pda;
 
 pub use decode::{decode_idl_account, IDL_PREFIX_LEN};
-pub use fetch::{fetch_idl_account, fetch_idl_for_program, Cluster};
+pub use fetch::{fetch_account_data, fetch_idl_account, fetch_idl_for_program, Cluster};
 pub use idl::AnchorIdl;
 pub use load::{load_idl_from_file, load_idl_from_workspace};
 pub use normalize::{default_account_discriminator, default_instruction_discriminator, normalize};

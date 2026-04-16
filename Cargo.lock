@@ -504,6 +504,7 @@ dependencies = [
  "ratchet-core",
  "ratchet-lock",
  "ratchet-source",
+ "ratchet-squads",
  "ratchet-svm",
  "serde",
  "serde_json",

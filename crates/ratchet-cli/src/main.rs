@@ -6,11 +6,13 @@ use std::process::ExitCode;
 use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand};
 use ratchet_anchor::{
-    fetch_idl_account, fetch_idl_for_program, load_idl_from_file, normalize, Cluster,
+    fetch_account_data, fetch_idl_account, fetch_idl_for_program, load_idl_from_file, normalize,
+    Cluster,
 };
 use ratchet_core::{check, default_rules, CheckContext, ProgramSurface, Report, Severity};
 use ratchet_lock::{Lockfile, DEFAULT_FILENAME};
 use ratchet_source::parse_dir;
+use ratchet_squads::{decode_vault_transaction, ProposalKind};
 use ratchet_svm::{
     fetch_program_accounts, validate_surface, verify_sbf_program_file, SbfProgramInfo,
 };
@@ -42,6 +44,10 @@ enum Command {
     /// IDL's layout. Catches 'old-layout accounts never migrated' failures
     /// that static rules miss.
     Replay(ReplayArgs),
+    /// Summarise a Squads V4 vault-transaction proposal. Fetches the
+    /// account, classifies it (program upgrade / set-authority / other),
+    /// and lists referenced pubkeys for signer triage.
+    Squads(SquadsArgs),
     /// List every registered rule with its one-line description.
     ListRules,
 }
@@ -125,6 +131,17 @@ struct ReplayArgs {
 }
 
 #[derive(Debug, Args)]
+struct SquadsArgs {
+    /// Squads V4 `VaultTransaction` account pubkey.
+    #[arg(long)]
+    proposal: String,
+
+    /// Cluster shorthand (mainnet, devnet, testnet) or RPC URL.
+    #[arg(long, default_value = "mainnet")]
+    cluster: String,
+}
+
+#[derive(Debug, Args)]
 struct LockArgs {
     /// Source IDL path.
     #[arg(long, group = "source")]
@@ -169,11 +186,46 @@ fn run(cli: Cli) -> Result<i32> {
         Command::CheckUpgrade(args) => check_upgrade(args, cli.json),
         Command::Lock(args) => lock(args, cli.json),
         Command::Replay(args) => replay(args, cli.json),
+        Command::Squads(args) => squads(args, cli.json),
         Command::ListRules => {
             list_rules(cli.json);
             Ok(0)
         }
     }
+}
+
+fn squads(args: SquadsArgs, as_json: bool) -> Result<i32> {
+    let cluster = Cluster::parse(&args.cluster);
+    let data = fetch_account_data(&cluster, &args.proposal)
+        .with_context(|| format!("fetching Squads proposal {}", args.proposal))?;
+    let summary = decode_vault_transaction(&data)?;
+
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&summary)?);
+        return Ok(0);
+    }
+
+    let label = match &summary.kind {
+        ProposalKind::ProgramUpgrade { .. } => "PROGRAM UPGRADE",
+        ProposalKind::SetUpgradeAuthority => "SET UPGRADE AUTHORITY",
+        ProposalKind::Other => "other / unrecognised",
+    };
+    println!("proposal: {}", args.proposal);
+    println!("kind:     {label}");
+    println!("size:     {} bytes", summary.account_size);
+    if !summary.referenced_pubkeys.is_empty() {
+        println!("referenced pubkeys (top {}):", summary.referenced_pubkeys.len());
+        for k in &summary.referenced_pubkeys {
+            println!("  {k}");
+        }
+    }
+    if matches!(summary.kind, ProposalKind::ProgramUpgrade { .. }) {
+        println!(
+            "\nhint: pair with `ratchet check-upgrade --program <PID> --new <IDL>` using\n\
+             the pubkeys above to see exactly what schema changes this upgrade would apply."
+        );
+    }
+    Ok(0)
 }
 
 fn replay(args: ReplayArgs, as_json: bool) -> Result<i32> {

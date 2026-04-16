@@ -65,6 +65,12 @@ pub fn fetch_idl_for_program(cluster: &Cluster, program_id_b58: &str) -> Result<
     fetch_idl_account(cluster, &idl_b58)
 }
 
+/// Fetch raw account data for any Solana account via `getAccountInfo`.
+/// Returns the base64-decoded data bytes.
+pub fn fetch_account_data(cluster: &Cluster, pubkey: &str) -> Result<Vec<u8>> {
+    rpc_get_account_data(cluster.url(), pubkey)
+}
+
 fn rpc_get_account_data(rpc_url: &str, pubkey: &str) -> Result<Vec<u8>> {
     let body = json!({
         "jsonrpc": "2.0",

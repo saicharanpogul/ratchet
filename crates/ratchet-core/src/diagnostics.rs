@@ -60,6 +60,62 @@ pub struct Finding {
     pub allow_flag: Option<String>,
 }
 
+impl Finding {
+    /// Construct a finding with the severity, rule id, and rule name set.
+    /// Path, message, and optional fields are populated via the fluent setters.
+    pub fn new(
+        severity: Severity,
+        rule_id: impl Into<String>,
+        rule_name: impl Into<String>,
+    ) -> Self {
+        Self {
+            rule_id: rule_id.into(),
+            rule_name: rule_name.into(),
+            severity,
+            path: Vec::new(),
+            message: String::new(),
+            old: None,
+            new: None,
+            suggestion: None,
+            allow_flag: None,
+        }
+    }
+
+    pub fn at<P, S>(mut self, path: P) -> Self
+    where
+        P: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.path = path.into_iter().map(Into::into).collect();
+        self
+    }
+
+    pub fn message(mut self, msg: impl Into<String>) -> Self {
+        self.message = msg.into();
+        self
+    }
+
+    pub fn old(mut self, value: impl Into<String>) -> Self {
+        self.old = Some(value.into());
+        self
+    }
+
+    pub fn new_value(mut self, value: impl Into<String>) -> Self {
+        self.new = Some(value.into());
+        self
+    }
+
+    pub fn suggestion(mut self, s: impl Into<String>) -> Self {
+        self.suggestion = Some(s.into());
+        self
+    }
+
+    pub fn allow_flag(mut self, flag: impl Into<String>) -> Self {
+        self.allow_flag = Some(flag.into());
+        self
+    }
+}
+
 /// Aggregate result of diffing two program versions.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Report {
@@ -153,5 +209,26 @@ mod tests {
         r.push(finding(Severity::Breaking));
         assert_eq!(r.exit_code(), 1);
         assert_eq!(r.max_severity(), Some(Severity::Breaking));
+    }
+
+    #[test]
+    fn builder_constructs_expected_finding() {
+        let f = Finding::new(Severity::Breaking, "R006", "account-discriminator-change")
+            .at(["account:Vault", "discriminator"])
+            .message("discriminator changed")
+            .old("deadbeef01020304")
+            .new_value("cafef00d05060708")
+            .suggestion("rename the struct back or set a custom discriminator")
+            .allow_flag("unsafe-allow-rename");
+
+        assert_eq!(f.rule_id, "R006");
+        assert_eq!(f.rule_name, "account-discriminator-change");
+        assert_eq!(f.severity, Severity::Breaking);
+        assert_eq!(f.path, vec!["account:Vault", "discriminator"]);
+        assert_eq!(f.message, "discriminator changed");
+        assert_eq!(f.old.as_deref(), Some("deadbeef01020304"));
+        assert_eq!(f.new.as_deref(), Some("cafef00d05060708"));
+        assert!(f.suggestion.is_some());
+        assert_eq!(f.allow_flag.as_deref(), Some("unsafe-allow-rename"));
     }
 }

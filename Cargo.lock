@@ -476,6 +476,7 @@ dependencies = [
 name = "ratchet-lock"
 version = "0.0.1"
 dependencies = [
+ "anyhow",
  "ratchet-core",
  "serde",
  "serde_json",

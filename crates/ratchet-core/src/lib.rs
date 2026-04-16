@@ -6,9 +6,13 @@
 //! [`Severity::Additive`], [`Severity::Unsafe`], or [`Severity::Breaking`].
 
 pub mod diagnostics;
+pub mod engine;
+pub mod rule;
 pub mod surface;
 
 pub use diagnostics::{Finding, Path, Report, Severity};
+pub use engine::{check, default_rules};
+pub use rule::{CheckContext, Rule};
 pub use surface::{
     AccountDef, AccountInput, ArgDef, Discriminator, EnumVariant, EnumVariantFields, ErrorDef,
     FieldDef, InstructionDef, PdaSpec, PrimitiveType, ProgramSurface, Seed, TypeDef, TypeRef,

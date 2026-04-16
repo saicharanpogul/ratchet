@@ -11,7 +11,9 @@ use ratchet_anchor::{
 use ratchet_core::{check, default_rules, CheckContext, ProgramSurface, Report, Severity};
 use ratchet_lock::{Lockfile, DEFAULT_FILENAME};
 use ratchet_source::parse_dir;
-use ratchet_svm::{fetch_program_accounts, validate_surface};
+use ratchet_svm::{
+    fetch_program_accounts, validate_surface, verify_sbf_program_file, SbfProgramInfo,
+};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -114,6 +116,12 @@ struct ReplayArgs {
     /// Maximum number of accounts to sample from the program.
     #[arg(long, default_value_t = 100)]
     limit: usize,
+
+    /// Path to the candidate program `.so`. When provided, the file's
+    /// ELF header is verified (magic, class, endianness, SBF machine
+    /// type) before the account-sample replay runs.
+    #[arg(long)]
+    so: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -170,18 +178,47 @@ fn run(cli: Cli) -> Result<i32> {
 
 fn replay(args: ReplayArgs, as_json: bool) -> Result<i32> {
     let surface = normalize(&load_idl_from_file(&args.new)?)?;
+
+    let binary_info = if let Some(so_path) = &args.so {
+        Some(
+            verify_sbf_program_file(so_path)
+                .with_context(|| format!("verifying program binary at {}", so_path.display()))?,
+        )
+    } else {
+        None
+    };
+
     let cluster = Cluster::parse(&args.cluster);
     let samples = fetch_program_accounts(&cluster, &args.program, args.limit)
         .with_context(|| format!("sampling accounts from program {}", args.program))?;
     let report = validate_surface(&surface, &samples);
 
     if as_json {
-        println!("{}", serde_json::to_string_pretty(&report)?);
+        let payload = serde_json::json!({
+            "binary": binary_info,
+            "report": report,
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
     } else {
+        if let Some(info) = &binary_info {
+            render_binary_info(info, args.so.as_ref().unwrap());
+        }
         render_replay(&report);
     }
 
     Ok(if report.is_clean() { 0 } else { 1 })
+}
+
+fn render_binary_info(info: &SbfProgramInfo, path: &std::path::Path) {
+    println!(
+        "binary ok: {} ({} bytes, machine={:#x}, {}-bit, {}-endian, {})",
+        path.display(),
+        info.size_bytes,
+        info.machine,
+        if info.elf_class_64 { 64 } else { 32 },
+        if info.little_endian { "little" } else { "big" },
+        if info.is_shared_object { "shared-object" } else { "not shared" },
+    );
 }
 
 fn render_replay(report: &ratchet_svm::ReplayReport) {

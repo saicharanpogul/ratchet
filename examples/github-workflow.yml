@@ -1,0 +1,45 @@
+# Example workflow that runs `ratchet check-upgrade` on every PR that
+# touches the program source or its built IDL. Assumes:
+#   - the repo commits `ratchet.lock` at the repo root
+#   - the IDL is built by `anchor build` into `target/idl/<program>.json`
+#
+# Drop this at `.github/workflows/upgrade-safety.yml` in your repo.
+
+name: upgrade-safety
+
+on:
+  pull_request:
+    paths:
+      - 'programs/**'
+      - 'target/idl/**'
+      - 'ratchet.lock'
+
+jobs:
+  ratchet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ratchet
+
+      # Build your program's IDL — replace with your preferred tool.
+      - name: anchor build
+        run: anchor build
+        # or: run a targeted `cargo build` that emits the IDL
+
+      - name: ratchet check-upgrade
+        uses: saicharanpogul/ratchet@main
+        with:
+          new: target/idl/my_program.json
+          lock: ratchet.lock
+          # Uncomment to diff against mainnet instead of the committed lock:
+          # program: <YOUR_PROGRAM_ID>
+          # cluster: mainnet
+
+          # Acknowledge intentional unsafe changes; remove when not needed.
+          # unsafes: allow-rename allow-field-append
+          # migrated-accounts: Vault

@@ -84,6 +84,19 @@ ratchet --json check-upgrade --lock ratchet.lock --new new.json \
 ratchet list-rules
 ```
 
+### GitHub Action
+
+A composite action is shipped from the repo root (`action.yml`). On every PR, diff the candidate IDL against a committed `ratchet.lock`:
+
+```yaml
+- uses: saicharanpogul/ratchet@main
+  with:
+    new: target/idl/my_program.json
+    lock: ratchet.lock
+```
+
+See [`examples/github-workflow.yml`](examples/github-workflow.yml) for a complete example including Rust toolchain setup and caching. Action outputs `verdict` (safe / breaking / unsafe) and `exit-code` for downstream steps to react to.
+
 ## Rules
 
 | ID | Name | Severity | Allow flag |

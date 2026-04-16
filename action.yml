@@ -1,0 +1,123 @@
+name: 'ratchet upgrade-safety check'
+description: 'Fail a Solana program PR when its IDL diff would corrupt on-chain state or break clients.'
+author: 'Saicharan Pogul'
+branding:
+  icon: 'shield'
+  color: 'purple'
+
+inputs:
+  new:
+    description: 'Path to the new (candidate) IDL JSON. Typically target/idl/<program>.json from an anchor build.'
+    required: true
+  lock:
+    description: 'Path to the committed ratchet.lock baseline. Mutually exclusive with program / idl-account / old.'
+    required: false
+    default: 'ratchet.lock'
+  old:
+    description: 'Path to a second IDL to diff against. Overrides `lock`.'
+    required: false
+    default: ''
+  program:
+    description: 'Program id to fetch the baseline IDL from. Overrides `lock`.'
+    required: false
+    default: ''
+  idl-account:
+    description: 'Explicit Anchor IDL account pubkey to fetch. Overrides `lock` and `program`.'
+    required: false
+    default: ''
+  cluster:
+    description: 'Cluster shorthand or RPC URL for --program / --idl-account modes.'
+    required: false
+    default: 'mainnet'
+  unsafes:
+    description: 'Space-separated list of --unsafe acknowledgement flags (e.g. "allow-rename allow-field-append").'
+    required: false
+    default: ''
+  migrated-accounts:
+    description: 'Space-separated account names with a declared Migration<From, To>.'
+    required: false
+    default: ''
+  json:
+    description: 'Set to "true" to emit a JSON report to stdout.'
+    required: false
+    default: 'false'
+  working-directory:
+    description: 'Working directory the command runs in.'
+    required: false
+    default: '.'
+  version:
+    description: 'Git ref (branch, tag, or commit) of ratchet to install. Ignored if ratchet is already on PATH.'
+    required: false
+    default: 'main'
+
+outputs:
+  exit-code:
+    description: 'Exit code from ratchet (0 additive, 1 breaking, 2 unsafe, 3 CLI error).'
+    value: ${{ steps.check.outputs.exit-code }}
+  verdict:
+    description: 'One of: safe, breaking, unsafe.'
+    value: ${{ steps.check.outputs.verdict }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install ratchet
+      shell: bash
+      run: |
+        if command -v ratchet >/dev/null 2>&1; then
+          echo "ratchet already on PATH: $(command -v ratchet)"
+          ratchet --version || true
+          exit 0
+        fi
+        if ! command -v cargo >/dev/null 2>&1; then
+          echo "::error::cargo is not available. Add actions-rust-lang/setup-rust-toolchain@v1 before this action." >&2
+          exit 1
+        fi
+        echo "Installing ratchet from ${{ inputs.version }}"
+        cargo install --quiet \
+          --git https://github.com/saicharanpogul/ratchet \
+          --branch "${{ inputs.version }}" \
+          ratchet-cli
+
+    - name: Run ratchet check-upgrade
+      id: check
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        set +e
+        ARGS=(check-upgrade --new "${{ inputs.new }}")
+
+        if [[ -n "${{ inputs.old }}" ]]; then
+          ARGS+=(--old "${{ inputs.old }}")
+        elif [[ -n "${{ inputs.idl-account }}" ]]; then
+          ARGS+=(--idl-account "${{ inputs.idl-account }}" --cluster "${{ inputs.cluster }}")
+        elif [[ -n "${{ inputs.program }}" ]]; then
+          ARGS+=(--program "${{ inputs.program }}" --cluster "${{ inputs.cluster }}")
+        else
+          ARGS+=(--lock "${{ inputs.lock }}")
+        fi
+
+        for flag in ${{ inputs.unsafes }}; do
+          ARGS+=(--unsafe "$flag")
+        done
+        for acct in ${{ inputs.migrated-accounts }}; do
+          ARGS+=(--migrated-account "$acct")
+        done
+
+        GLOBAL=()
+        if [[ "${{ inputs.json }}" == "true" ]]; then
+          GLOBAL+=(--json)
+        fi
+
+        ratchet "${GLOBAL[@]}" "${ARGS[@]}"
+        CODE=$?
+
+        case "$CODE" in
+          0) VERDICT="safe" ;;
+          1) VERDICT="breaking" ;;
+          2) VERDICT="unsafe" ;;
+          *) VERDICT="error" ;;
+        esac
+        echo "exit-code=$CODE" >> "$GITHUB_OUTPUT"
+        echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
+        exit "$CODE"

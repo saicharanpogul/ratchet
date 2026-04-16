@@ -14,6 +14,7 @@ pub mod r005_account_field_append;
 pub mod r006_account_discriminator_change;
 pub mod r007_instruction_removed;
 pub mod r008_instruction_arg_change;
+pub mod r009_instruction_account_list_change;
 
 pub use r001_account_field_reorder::AccountFieldReorder;
 pub use r002_account_field_retype::AccountFieldRetype;
@@ -23,6 +24,7 @@ pub use r005_account_field_append::AccountFieldAppend;
 pub use r006_account_discriminator_change::AccountDiscriminatorChange;
 pub use r007_instruction_removed::InstructionRemoved;
 pub use r008_instruction_arg_change::InstructionArgChange;
+pub use r009_instruction_account_list_change::InstructionAccountListChange;
 
 /// Every rule that ships with ratchet. Order matches the `RXXX` ids.
 pub fn all() -> Vec<Box<dyn Rule>> {
@@ -35,5 +37,6 @@ pub fn all() -> Vec<Box<dyn Rule>> {
         Box::new(AccountDiscriminatorChange),
         Box::new(InstructionRemoved),
         Box::new(InstructionArgChange),
+        Box::new(InstructionAccountListChange),
     ]
 }

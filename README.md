@@ -89,10 +89,19 @@ ratchet check-upgrade --lock ratchet.lock --new target/idl/vault.json \
 ```sh
 ratchet replay --program <PROGRAM_ID> \
   --new target/idl/vault.json \
-  --limit 500
+  --limit 500 \
+  --so target/deploy/vault.so
 ```
 
-Pulls up to 500 program-owned accounts via `getProgramAccounts`, classifies each by the Anchor discriminator, and flags any whose data is shorter than the new IDL's minimum layout (the common 'old layout never reallocated' failure).
+Pulls up to 500 program-owned accounts via `getProgramAccounts`, classifies each by the Anchor discriminator, and flags any whose data is shorter than the new IDL's minimum layout. Optional `--so` verifies the candidate binary's ELF header (magic, 64-bit, little-endian, SBF/SBPF shared object) before sampling — catches pushes of the wrong target build.
+
+### Summarise a Squads V4 upgrade proposal
+
+```sh
+ratchet squads --proposal <VAULT_TX_PUBKEY> --cluster mainnet
+```
+
+Fetches the proposal account and reports whether it is a program upgrade, an upgrade-authority change, or something else, plus up to 16 referenced pubkeys so a signer can eyeball what's being touched.
 
 ### Acknowledge an intentional change
 
@@ -184,7 +193,9 @@ ratchet/
 │   ├── ratchet-anchor/             # Anchor IDL loader, decoder, normalizer, RPC fetch, PDA derivation
 │   ├── ratchet-lock/               # ratchet.lock format
 │   ├── ratchet-source/             # syn-based source parser for PDA seeds
-│   ├── ratchet-svm/                # sample-account runtime-replay verification
+│   ├── ratchet-svm/                # sample-account runtime verification + ELF header check
+│   ├── ratchet-squads/             # Squads V4 vault-transaction decoder
+│   ├── ratchet-quasar/             # compiler-pass entry points and SurfaceBuilder
 │   └── ratchet-cli/                # the `ratchet` binary
 ├── examples/
 │   └── github-workflow.yml

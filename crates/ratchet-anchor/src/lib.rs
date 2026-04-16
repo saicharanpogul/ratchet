@@ -5,6 +5,8 @@
 
 pub mod idl;
 pub mod load;
+pub mod normalize;
 
 pub use idl::AnchorIdl;
 pub use load::{load_idl_from_file, load_idl_from_workspace};
+pub use normalize::{default_account_discriminator, default_instruction_discriminator, normalize};

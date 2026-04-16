@@ -9,13 +9,23 @@
 //! a caller can pair it with `ratchet check-upgrade` on the buffer's
 //! contents.
 //!
-//! Full deserialisation of every Squads message variant is intentionally
-//! not attempted here; Squads has a rich schema (over forty instruction
-//! variants at the time of writing) and would deserve its own crate
-//! imported from the Squads repository. What we do instead is look for
-//! the canonical BPF-loader-upgrade instruction by scanning the raw
-//! account data for the known program-id bytes and the 4-byte Upgrade
-//! discriminator, then decoding the adjacent account metas.
+//! Two decoder paths are available:
+//!
+//! - [`decode_vault_transaction`] does a full Borsh walk of the account
+//!   blob and returns a [`VaultTransactionSummary`] with concrete
+//!   `program_id` and `buffer` pubkeys when the embedded instruction is
+//!   a BPF loader Upgrade.
+//! - [`decode_vault_transaction_fast`] is a heuristic byte-scan fallback
+//!   retained for corner cases where the structured decode fails (e.g.
+//!   future Squads schema revisions). It classifies the proposal kind
+//!   but doesn't extract field values.
+
+mod decoded;
+mod read;
+
+pub use decoded::{
+    CompiledInstruction, MessageAddressTableLookup, VaultTransaction, VaultTransactionMessage,
+};
 
 use anyhow::{bail, Result};
 use ratchet_anchor::pda::{decode_pubkey, encode_pubkey};
@@ -70,14 +80,13 @@ pub enum ProposalKind {
     Other,
 }
 
-/// Decode a raw Squads V4 `VaultTransaction` account blob.
+/// Decode a raw Squads V4 `VaultTransaction` account.
 ///
-/// The heuristic is intentionally coarse: we search the raw bytes for
-/// the BPF loader program id (encoded as 32 bytes of base58-decoded
-/// pubkey) and for the `Upgrade`/`SetAuthority` u32 discriminators. A
-/// hit on both positions identifies the proposal as an upgrade. The
-/// referenced-pubkey list is a best-effort scan of every 32-byte window
-/// that happens to decode to a plausible base58 pubkey we can round-trip.
+/// Tries the structured Borsh decoder first and, on success, extracts
+/// the program id + buffer of a BPF-loader Upgrade proposal. Falls back
+/// to a coarse byte-scan ([`decode_vault_transaction_fast`]) if the
+/// structured decode fails — that way future Squads schema changes
+/// don't take down the whole decoder.
 pub fn decode_vault_transaction(data: &[u8]) -> Result<VaultTransactionSummary> {
     if data.len() < 8 {
         bail!(
@@ -86,15 +95,27 @@ pub fn decode_vault_transaction(data: &[u8]) -> Result<VaultTransactionSummary> 
         );
     }
 
+    match VaultTransaction::decode(data) {
+        Ok(vt) => Ok(summarise_structured(&vt, data.len())),
+        Err(_) => decode_vault_transaction_fast(data),
+    }
+}
+
+/// Byte-scan heuristic fallback. Classifies the proposal kind from the
+/// presence of the loader program id + the Upgrade/SetAuthority u32
+/// discriminator, but cannot pin concrete pubkey field values.
+pub fn decode_vault_transaction_fast(data: &[u8]) -> Result<VaultTransactionSummary> {
+    if data.len() < 8 {
+        bail!("too short for any Squads account: {} bytes", data.len());
+    }
     let bpf_loader_bytes = decode_pubkey(BPF_LOADER_UPGRADEABLE_PROGRAM_ID)?;
     let mentions_loader = window_search(data, &bpf_loader_bytes).is_some();
-
     let upgrade_hit = window_search(data, &BPF_LOADER_UPGRADE_DISCRIMINATOR).is_some();
     let set_authority_hit = window_search(data, &BPF_LOADER_SET_AUTHORITY_DISCRIMINATOR).is_some();
 
     let kind = if mentions_loader && upgrade_hit {
         ProposalKind::ProgramUpgrade {
-            program_id: None, // concrete extraction requires Squads schema; see docs
+            program_id: None,
             buffer: None,
         }
     } else if mentions_loader && set_authority_hit {
@@ -108,6 +129,75 @@ pub fn decode_vault_transaction(data: &[u8]) -> Result<VaultTransactionSummary> 
         account_size: data.len(),
         referenced_pubkeys: scan_pubkeys(data, 16),
     })
+}
+
+fn summarise_structured(vt: &VaultTransaction, account_size: usize) -> VaultTransactionSummary {
+    let loader_bytes = match decode_pubkey(BPF_LOADER_UPGRADEABLE_PROGRAM_ID) {
+        Ok(b) => b,
+        Err(_) => return fallback_summary(vt, account_size),
+    };
+
+    let mut kind = ProposalKind::Other;
+    for ix in &vt.message.instructions {
+        let program_key = match vt
+            .message
+            .account_keys
+            .get(ix.program_id_index as usize)
+        {
+            Some(k) => k,
+            None => continue,
+        };
+        if program_key != &loader_bytes {
+            continue;
+        }
+        if ix.data.starts_with(&BPF_LOADER_UPGRADE_DISCRIMINATOR) {
+            kind = program_upgrade_from_ix(ix, &vt.message);
+            break;
+        }
+        if ix.data.starts_with(&BPF_LOADER_SET_AUTHORITY_DISCRIMINATOR) {
+            kind = ProposalKind::SetUpgradeAuthority;
+            break;
+        }
+    }
+
+    VaultTransactionSummary {
+        kind,
+        account_size,
+        referenced_pubkeys: vt.message.account_keys.iter().map(encode_pubkey).collect(),
+    }
+}
+
+fn fallback_summary(vt: &VaultTransaction, account_size: usize) -> VaultTransactionSummary {
+    VaultTransactionSummary {
+        kind: ProposalKind::Other,
+        account_size,
+        referenced_pubkeys: vt.message.account_keys.iter().map(encode_pubkey).collect(),
+    }
+}
+
+/// Given the compiled Upgrade instruction and its enclosing message,
+/// read the BPF-loader-upgradeable layout:
+///
+/// ```text
+///   accounts[0] = ProgramData (the address whose bytecode gets replaced)
+///   accounts[1] = Program (the program id itself)
+///   accounts[2] = Buffer (new bytecode source)
+///   accounts[3] = Spill (receives the buffer's lamports)
+///   accounts[4] = Rent sysvar
+///   accounts[5] = Clock sysvar
+///   accounts[6] = Authority (must sign)
+/// ```
+fn program_upgrade_from_ix(
+    ix: &CompiledInstruction,
+    message: &VaultTransactionMessage,
+) -> ProposalKind {
+    let pubkey_at = |slot: usize| -> Option<String> {
+        let index = *ix.account_indexes.get(slot)? as usize;
+        message.account_keys.get(index).map(encode_pubkey)
+    };
+    let program_id = pubkey_at(1);
+    let buffer = pubkey_at(2);
+    ProposalKind::ProgramUpgrade { program_id, buffer }
 }
 
 fn window_search(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -205,5 +295,96 @@ mod tests {
         assert!(keys
             .iter()
             .any(|k| k == BPF_LOADER_UPGRADEABLE_PROGRAM_ID));
+    }
+
+    /// Build a real Borsh-formatted VaultTransaction whose inner
+    /// instruction is a BPF loader Upgrade. Exercises the structured
+    /// decode path end-to-end.
+    fn synth_structured_upgrade_blob(
+        target_program: &str,
+        buffer: &str,
+    ) -> (Vec<u8>, String, String) {
+        let loader = decode_pubkey(BPF_LOADER_UPGRADEABLE_PROGRAM_ID).unwrap();
+        let program = decode_pubkey(target_program).unwrap();
+        let buf_key = decode_pubkey(buffer).unwrap();
+        let spill = [0x33u8; 32];
+        let rent = [0x44u8; 32];
+        let clock = [0x55u8; 32];
+        let authority = [0x66u8; 32];
+        let program_data = [0x77u8; 32];
+
+        let mut blob = Vec::new();
+        blob.extend_from_slice(&[0xab; 8]); // disc
+        blob.extend_from_slice(&[0x01; 32]); // multisig
+        blob.extend_from_slice(&[0x02; 32]); // creator
+        blob.extend_from_slice(&7u64.to_le_bytes());
+        blob.push(254); // bump
+        blob.push(0); // vault_index
+        blob.push(255); // vault_bump
+        blob.extend_from_slice(&(0u32).to_le_bytes()); // ephemeral_signer_bumps empty
+
+        // Message
+        blob.push(1); // num_signers
+        blob.push(1); // num_writable_signers
+        blob.push(1); // num_writable_non_signers
+
+        // account_keys: loader is at index 7, followed by the Upgrade
+        // instruction's 7 accounts (program_data, program, buffer, spill,
+        // rent, clock, authority) in order. The compiled ix will reference
+        // these by index into this array.
+        let keys: Vec<&[u8; 32]> =
+            vec![&program_data, &program, &buf_key, &spill, &rent, &clock, &authority, &loader];
+        blob.extend_from_slice(&(keys.len() as u32).to_le_bytes());
+        for k in &keys {
+            blob.extend_from_slice(*k);
+        }
+
+        // One compiled instruction: program_id_index=7 (loader), account
+        // indexes 0..=6 pointing at the 7 upgrade accounts, data =
+        // Upgrade discriminator.
+        blob.extend_from_slice(&(1u32).to_le_bytes());
+        blob.push(7); // program_id_index
+        blob.push(7); // account_indexes len (SmallVec<u8,u8>)
+        for i in 0u8..7 {
+            blob.push(i);
+        }
+        blob.extend_from_slice(&(4u16).to_le_bytes()); // data len
+        blob.extend_from_slice(&BPF_LOADER_UPGRADE_DISCRIMINATOR);
+
+        // No ATLs
+        blob.extend_from_slice(&(0u32).to_le_bytes());
+
+        (blob, target_program.into(), buffer.into())
+    }
+
+    #[test]
+    fn structured_decode_extracts_program_id_and_buffer() {
+        let prog = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+        let buffer = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
+        let (blob, expected_prog, expected_buf) = synth_structured_upgrade_blob(prog, buffer);
+        let summary = decode_vault_transaction(&blob).unwrap();
+        match summary.kind {
+            ProposalKind::ProgramUpgrade {
+                program_id,
+                buffer: buf,
+            } => {
+                assert_eq!(program_id.as_deref(), Some(expected_prog.as_str()));
+                assert_eq!(buf.as_deref(), Some(expected_buf.as_str()));
+            }
+            other => panic!("expected ProgramUpgrade with fields, got {other:?}"),
+        }
+        // account_keys should surface all 8 referenced pubkeys in order.
+        assert_eq!(summary.referenced_pubkeys.len(), 8);
+        assert!(summary
+            .referenced_pubkeys
+            .iter()
+            .any(|p| p == BPF_LOADER_UPGRADEABLE_PROGRAM_ID));
+    }
+
+    #[test]
+    fn decode_vault_transaction_falls_back_on_bad_layout() {
+        // Random blob — Borsh walk fails, heuristic kicks in.
+        let summary = decode_vault_transaction(&synth_upgrade_blob()).unwrap();
+        assert!(matches!(summary.kind, ProposalKind::ProgramUpgrade { .. }));
     }
 }

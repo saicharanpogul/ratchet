@@ -139,6 +139,26 @@ struct SquadsArgs {
     /// Cluster shorthand (mainnet, devnet, testnet) or RPC URL.
     #[arg(long, default_value = "mainnet")]
     cluster: String,
+
+    /// After decoding the proposal, fetch the current on-chain IDL for
+    /// the extracted program id and run `check-upgrade` against the
+    /// local IDL path provided via `--new`. Only applies when the
+    /// proposal is classified as a program upgrade.
+    #[arg(long)]
+    auto_diff: bool,
+
+    /// Candidate IDL JSON used by `--auto-diff`.
+    #[arg(long, requires = "auto_diff")]
+    new: Option<PathBuf>,
+
+    /// Acknowledge an `unsafe-*` finding during auto-diff. Same
+    /// semantics as on `check-upgrade`.
+    #[arg(long = "unsafe", value_name = "FLAG", requires = "auto_diff")]
+    unsafes: Vec<String>,
+
+    /// Account that has a declared migration, for auto-diff.
+    #[arg(long = "migrated-account", value_name = "NAME", requires = "auto_diff")]
+    migrated_accounts: Vec<String>,
 }
 
 #[derive(Debug, Args)]
@@ -200,11 +220,33 @@ fn squads(args: SquadsArgs, as_json: bool) -> Result<i32> {
         .with_context(|| format!("fetching Squads proposal {}", args.proposal))?;
     let summary = decode_vault_transaction(&data)?;
 
+    let auto_diff_report = if args.auto_diff {
+        Some(run_auto_diff(&args, &summary, &cluster)?)
+    } else {
+        None
+    };
+
     if as_json {
-        println!("{}", serde_json::to_string_pretty(&summary)?);
-        return Ok(0);
+        let payload = serde_json::json!({
+            "summary": summary,
+            "check_upgrade": auto_diff_report,
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        render_squads_human(&args, &summary);
+        if let Some(report) = &auto_diff_report {
+            println!();
+            render_human(report);
+        }
     }
 
+    if let Some(report) = &auto_diff_report {
+        return Ok(report.exit_code());
+    }
+    Ok(0)
+}
+
+fn render_squads_human(args: &SquadsArgs, summary: &ratchet_squads::VaultTransactionSummary) {
     let label = match &summary.kind {
         ProposalKind::ProgramUpgrade { .. } => "PROGRAM UPGRADE",
         ProposalKind::SetUpgradeAuthority => "SET UPGRADE AUTHORITY",
@@ -213,19 +255,70 @@ fn squads(args: SquadsArgs, as_json: bool) -> Result<i32> {
     println!("proposal: {}", args.proposal);
     println!("kind:     {label}");
     println!("size:     {} bytes", summary.account_size);
+    if let ProposalKind::ProgramUpgrade { program_id, buffer } = &summary.kind {
+        if let Some(p) = program_id {
+            println!("program:  {p}");
+        }
+        if let Some(b) = buffer {
+            println!("buffer:   {b}");
+        }
+    }
     if !summary.referenced_pubkeys.is_empty() {
-        println!("referenced pubkeys (top {}):", summary.referenced_pubkeys.len());
+        println!(
+            "referenced pubkeys ({}):",
+            summary.referenced_pubkeys.len()
+        );
         for k in &summary.referenced_pubkeys {
             println!("  {k}");
         }
     }
-    if matches!(summary.kind, ProposalKind::ProgramUpgrade { .. }) {
+    if matches!(summary.kind, ProposalKind::ProgramUpgrade { .. }) && !args.auto_diff {
         println!(
-            "\nhint: pair with `ratchet check-upgrade --program <PID> --new <IDL>` using\n\
-             the pubkeys above to see exactly what schema changes this upgrade would apply."
+            "\nhint: rerun with --auto-diff --new <IDL> to have ratchet fetch the current\n\
+             on-chain IDL and diff it against your candidate."
         );
     }
-    Ok(0)
+}
+
+fn run_auto_diff(
+    args: &SquadsArgs,
+    summary: &ratchet_squads::VaultTransactionSummary,
+    cluster: &Cluster,
+) -> Result<Report> {
+    let new_path = args
+        .new
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("--auto-diff requires --new <IDL_PATH>"))?;
+    let program_id = match &summary.kind {
+        ProposalKind::ProgramUpgrade { program_id, .. } => program_id.as_deref(),
+        ProposalKind::SetUpgradeAuthority => {
+            bail!("proposal is a set-upgrade-authority change, not a program upgrade; --auto-diff does not apply")
+        }
+        ProposalKind::Other => {
+            bail!("proposal is not recognised as a BPF loader operation; --auto-diff cannot run")
+        }
+    }
+    .ok_or_else(|| {
+        anyhow::anyhow!(
+            "program_id could not be extracted from the proposal — fall back to running \
+             `ratchet check-upgrade --program <PID>` manually"
+        )
+    })?;
+
+    let old_idl = fetch_idl_for_program(cluster, program_id)
+        .with_context(|| format!("fetching current IDL for program {program_id}"))?;
+    let old = normalize(&old_idl)?;
+    let new = normalize(&load_idl_from_file(new_path)?)?;
+
+    let mut ctx = CheckContext::new();
+    for flag in &args.unsafes {
+        ctx = ctx.with_allow(flag.trim_start_matches("--"));
+    }
+    for name in &args.migrated_accounts {
+        ctx = ctx.with_migration(name);
+    }
+
+    Ok(check(&old, &new, &ctx, &default_rules()))
 }
 
 fn replay(args: ReplayArgs, as_json: bool) -> Result<i32> {

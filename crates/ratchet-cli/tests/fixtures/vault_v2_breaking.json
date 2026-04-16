@@ -1,0 +1,44 @@
+{
+  "metadata": { "name": "vault", "version": "0.2.0" },
+  "instructions": [
+    {
+      "name": "deposit",
+      "discriminator": [1, 2, 3, 4, 5, 6, 7, 8],
+      "accounts": [
+        { "name": "user", "signer": true },
+        { "name": "vault", "writable": true }
+      ],
+      "args": [{ "name": "amount", "type": "u32" }]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Vault",
+      "discriminator": [99, 99, 99, 99, 99, 99, 99, 99]
+    }
+  ],
+  "types": [
+    {
+      "name": "Vault",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "balance", "type": "u64" },
+          { "name": "owner", "type": "pubkey" },
+          { "name": "bump", "type": "u8" }
+        ]
+      }
+    },
+    {
+      "name": "Side",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          { "name": "Bid" },
+          { "name": "Cross" },
+          { "name": "Ask" }
+        ]
+      }
+    }
+  ]
+}

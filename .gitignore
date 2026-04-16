@@ -1,0 +1,13 @@
+/target
+**/*.rs.bk
+
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+node_modules/
+dist/
+.env
+.env.*

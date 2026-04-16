@@ -1,0 +1,18 @@
+[package]
+name = "ratchet-core"
+description = "Core IR and rule engine for ratchet, an upgrade-safety checker for Solana programs"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

@@ -1,0 +1,19 @@
+[package]
+name = "ratchet-lock"
+description = "Lockfile format for ratchet upgrade-safety checks"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+ratchet-core = { path = "../ratchet-core", version = "0.0.1" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

@@ -1,0 +1,25 @@
+[package]
+name = "ratchet-cli"
+description = "CLI for the ratchet upgrade-safety checker"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[[bin]]
+name = "ratchet"
+path = "src/main.rs"
+
+[dependencies]
+ratchet-core = { path = "../ratchet-core", version = "0.0.1" }
+ratchet-anchor = { path = "../ratchet-anchor", version = "0.0.1" }
+ratchet-lock = { path = "../ratchet-lock", version = "0.0.1" }
+anyhow.workspace = true
+clap.workspace = true
+serde_json.workspace = true

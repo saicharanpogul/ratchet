@@ -1,0 +1,24 @@
+[package]
+name = "ratchet-source"
+description = "Rust source parser for ratchet: extracts PDA seeds and instruction bindings from Anchor programs"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+ratchet-core = { path = "../ratchet-core", version = "0.0.1" }
+anyhow.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+syn.workspace = true
+proc-macro2.workspace = true
+quote.workspace = true
+walkdir.workspace = true

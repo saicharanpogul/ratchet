@@ -4,6 +4,7 @@ members = [
     "crates/ratchet-core",
     "crates/ratchet-anchor",
     "crates/ratchet-lock",
+    "crates/ratchet-source",
     "crates/ratchet-cli",
 ]
 
@@ -31,6 +32,10 @@ flate2 = "1"
 base64 = "0.22"
 ureq = { version = "2.10", features = ["json"] }
 curve25519-dalek = "4"
+syn = { version = "2", features = ["full", "extra-traits", "visit"] }
+proc-macro2 = "1"
+quote = "1"
+walkdir = "2"
 
 [profile.release]
 lto = "thin"

@@ -2,3 +2,7 @@
 //!
 //! Loads Anchor IDLs from local build output and from on-chain IDL accounts,
 //! and normalizes them into the `ratchet-core` intermediate representation.
+
+pub mod idl;
+
+pub use idl::AnchorIdl;

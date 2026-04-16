@@ -95,13 +95,30 @@ ratchet replay --program <PROGRAM_ID> \
 
 Pulls up to 500 program-owned accounts via `getProgramAccounts`, classifies each by the Anchor discriminator, and flags any whose data is shorter than the new IDL's minimum layout. Optional `--so` verifies the candidate binary's ELF header (magic, 64-bit, little-endian, SBF/SBPF shared object) before sampling — catches pushes of the wrong target build.
 
-### Summarise a Squads V4 upgrade proposal
+### Summarise a Squads V4 upgrade proposal (and auto-diff)
 
 ```sh
+# Basic classification
 ratchet squads --proposal <VAULT_TX_PUBKEY> --cluster mainnet
+
+# Full signer experience: decode + fetch current IDL + run check-upgrade
+ratchet squads --proposal <VAULT_TX_PUBKEY> \
+  --auto-diff --new target/idl/vault.json
 ```
 
-Fetches the proposal account and reports whether it is a program upgrade, an upgrade-authority change, or something else, plus up to 16 referenced pubkeys so a signer can eyeball what's being touched.
+Full Borsh decode pulls the concrete `program_id` and `buffer` pubkeys straight off the `CompiledInstruction`. With `--auto-diff`, `ratchet` fetches the current on-chain IDL for the proposal's target program and runs `check-upgrade` against the candidate IDL you provide — the signer sees the exact schema diff before clicking approve.
+
+### LiteSVM deploy smoke test (optional)
+
+```sh
+# Rebuild with the feature to enable it
+cargo install --path crates/ratchet-cli --features litesvm-deploy
+
+ratchet replay --program <PID> --new target/idl/vault.json \
+  --so target/deploy/vault.so --deploy
+```
+
+`--deploy` loads the `.so` into an in-process LiteSVM to confirm the runtime accepts the bytecode. The feature is opt-in because LiteSVM pulls in the Solana runtime crates; default builds stay lightweight and use the ELF-header check.
 
 ### Acknowledge an intentional change
 
@@ -199,6 +216,8 @@ ratchet/
 │   └── ratchet-cli/                # the `ratchet` binary
 ├── examples/
 │   └── github-workflow.yml
+├── docs/
+│   └── quasar-integration.md
 └── ...
 ```
 

@@ -39,6 +39,8 @@ syn = { version = "2", features = ["full", "extra-traits", "visit"] }
 proc-macro2 = "1"
 quote = "1"
 walkdir = "2"
+litesvm = "0.6"
+solana-pubkey = "2"
 
 [profile.release]
 lto = "thin"

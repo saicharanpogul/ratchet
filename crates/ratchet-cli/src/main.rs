@@ -14,7 +14,8 @@ use ratchet_lock::{Lockfile, DEFAULT_FILENAME};
 use ratchet_source::parse_dir;
 use ratchet_squads::{decode_vault_transaction, ProposalKind};
 use ratchet_svm::{
-    fetch_program_accounts, validate_surface, verify_sbf_program_file, SbfProgramInfo,
+    fetch_program_accounts, validate_surface, verify_deploy, verify_sbf_program_file, DeployReport,
+    SbfProgramInfo,
 };
 
 #[derive(Debug, Parser)]
@@ -128,6 +129,12 @@ struct ReplayArgs {
     /// type) before the account-sample replay runs.
     #[arg(long)]
     so: Option<PathBuf>,
+
+    /// Also deploy `--so` into an in-process LiteSVM instance. Requires
+    /// the `litesvm-deploy` build feature; without it the flag errors
+    /// with a clear message pointing at the build invocation.
+    #[arg(long, requires = "so")]
+    deploy: bool,
 }
 
 #[derive(Debug, Args)]
@@ -333,6 +340,18 @@ fn replay(args: ReplayArgs, as_json: bool) -> Result<i32> {
         None
     };
 
+    let deploy_report = if args.deploy {
+        let so_path = args.so.as_ref().expect("clap enforces --so with --deploy");
+        let bytes = std::fs::read(so_path)
+            .with_context(|| format!("reading {}", so_path.display()))?;
+        Some(
+            verify_deploy(&args.program, &bytes)
+                .context("running LiteSVM deploy smoke test")?,
+        )
+    } else {
+        None
+    };
+
     let cluster = Cluster::parse(&args.cluster);
     let samples = fetch_program_accounts(&cluster, &args.program, args.limit)
         .with_context(|| format!("sampling accounts from program {}", args.program))?;
@@ -341,6 +360,7 @@ fn replay(args: ReplayArgs, as_json: bool) -> Result<i32> {
     if as_json {
         let payload = serde_json::json!({
             "binary": binary_info,
+            "deploy": deploy_report,
             "report": report,
         });
         println!("{}", serde_json::to_string_pretty(&payload)?);
@@ -348,10 +368,32 @@ fn replay(args: ReplayArgs, as_json: bool) -> Result<i32> {
         if let Some(info) = &binary_info {
             render_binary_info(info, args.so.as_ref().unwrap());
         }
+        if let Some(d) = &deploy_report {
+            render_deploy(d);
+        }
         render_replay(&report);
     }
 
-    Ok(if report.is_clean() { 0 } else { 1 })
+    let deploy_failed = deploy_report
+        .as_ref()
+        .map(|d| !d.deploy_succeeded)
+        .unwrap_or(false);
+    Ok(if report.is_clean() && !deploy_failed { 0 } else { 1 })
+}
+
+fn render_deploy(d: &DeployReport) {
+    if d.deploy_succeeded {
+        println!("deploy ok: {} loaded into LiteSVM successfully", d.program_id);
+    } else {
+        println!(
+            "deploy FAILED: {} rejected by LiteSVM{}",
+            d.program_id,
+            d.error
+                .as_ref()
+                .map(|e| format!(" — {e}"))
+                .unwrap_or_default()
+        );
+    }
 }
 
 fn render_binary_info(info: &SbfProgramInfo, path: &std::path::Path) {

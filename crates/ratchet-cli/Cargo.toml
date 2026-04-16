@@ -27,3 +27,8 @@ anyhow.workspace = true
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+
+[features]
+default = []
+# Forwards to ratchet-svm/litesvm. Enables `ratchet replay --deploy`.
+litesvm-deploy = ["ratchet-svm/litesvm"]

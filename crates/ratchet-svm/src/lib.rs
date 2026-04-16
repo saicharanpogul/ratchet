@@ -17,11 +17,13 @@
 //! enhancement; checking discriminator + byte length is enough to catch
 //! the common failure modes without pulling in a full runtime.
 
+pub mod deploy;
 pub mod elf;
 pub mod fetch;
 pub mod report;
 pub mod validate;
 
+pub use deploy::{verify_deploy, DeployReport};
 pub use elf::{verify_sbf_program, verify_sbf_program_file, SbfProgramInfo, EM_BPF, EM_SBPF};
 pub use fetch::{fetch_program_accounts, ProgramAccount};
 pub use report::{AccountVerdict, ReplayReport, TypeTally};

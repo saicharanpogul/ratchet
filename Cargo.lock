@@ -530,6 +530,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ratchet-quasar"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "ratchet-core",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "ratchet-source"
 version = "0.0.1"
 dependencies = [
@@ -542,6 +553,18 @@ dependencies = [
  "syn",
  "thiserror",
  "walkdir",
+]
+
+[[package]]
+name = "ratchet-squads"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "bs58",
+ "ratchet-anchor",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]

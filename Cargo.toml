@@ -6,6 +6,8 @@ members = [
     "crates/ratchet-lock",
     "crates/ratchet-source",
     "crates/ratchet-svm",
+    "crates/ratchet-quasar",
+    "crates/ratchet-squads",
     "crates/ratchet-cli",
 ]
 

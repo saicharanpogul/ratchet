@@ -3,4 +3,8 @@
 //! This crate holds the framework-agnostic representation of a Solana program's
 //! public surface — accounts, instructions, enums, PDAs — and the rule engine
 //! that diffs two versions of that surface and classifies each change as
-//! `Additive`, `Breaking`, or `Unsafe`.
+//! [`Severity::Additive`], [`Severity::Unsafe`], or [`Severity::Breaking`].
+
+pub mod diagnostics;
+
+pub use diagnostics::{Finding, Path, Report, Severity};

@@ -11,12 +11,14 @@ pub mod r002_account_field_retype;
 pub mod r003_account_field_removed;
 pub mod r004_account_field_insert_middle;
 pub mod r005_account_field_append;
+pub mod r006_account_discriminator_change;
 
 pub use r001_account_field_reorder::AccountFieldReorder;
 pub use r002_account_field_retype::AccountFieldRetype;
 pub use r003_account_field_removed::AccountFieldRemoved;
 pub use r004_account_field_insert_middle::AccountFieldInsertMiddle;
 pub use r005_account_field_append::AccountFieldAppend;
+pub use r006_account_discriminator_change::AccountDiscriminatorChange;
 
 /// Every rule that ships with ratchet. Order matches the `RXXX` ids.
 pub fn all() -> Vec<Box<dyn Rule>> {
@@ -26,5 +28,6 @@ pub fn all() -> Vec<Box<dyn Rule>> {
         Box::new(AccountFieldRemoved),
         Box::new(AccountFieldInsertMiddle),
         Box::new(AccountFieldAppend),
+        Box::new(AccountDiscriminatorChange),
     ]
 }

@@ -11,6 +11,7 @@ use ratchet_anchor::{
 use ratchet_core::{check, default_rules, CheckContext, ProgramSurface, Report, Severity};
 use ratchet_lock::{Lockfile, DEFAULT_FILENAME};
 use ratchet_source::parse_dir;
+use ratchet_svm::{fetch_program_accounts, validate_surface};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -35,6 +36,10 @@ enum Command {
     /// Write a `ratchet.lock` snapshot from a program surface. The snapshot
     /// is what `check-upgrade --lock` later compares against.
     Lock(LockArgs),
+    /// Sample live program-owned accounts and verify they match the new
+    /// IDL's layout. Catches 'old-layout accounts never migrated' failures
+    /// that static rules miss.
+    Replay(ReplayArgs),
     /// List every registered rule with its one-line description.
     ListRules,
 }
@@ -93,6 +98,25 @@ struct CheckUpgradeArgs {
 }
 
 #[derive(Debug, Args)]
+struct ReplayArgs {
+    /// Path to the new IDL JSON whose account layouts will validate samples.
+    #[arg(long)]
+    new: PathBuf,
+
+    /// Program id to sample accounts from.
+    #[arg(long)]
+    program: String,
+
+    /// Cluster shorthand (mainnet, devnet, testnet) or RPC URL.
+    #[arg(long, default_value = "mainnet")]
+    cluster: String,
+
+    /// Maximum number of accounts to sample from the program.
+    #[arg(long, default_value_t = 100)]
+    limit: usize,
+}
+
+#[derive(Debug, Args)]
 struct LockArgs {
     /// Source IDL path.
     #[arg(long, group = "source")]
@@ -136,9 +160,76 @@ fn run(cli: Cli) -> Result<i32> {
     match cli.command {
         Command::CheckUpgrade(args) => check_upgrade(args, cli.json),
         Command::Lock(args) => lock(args, cli.json),
+        Command::Replay(args) => replay(args, cli.json),
         Command::ListRules => {
             list_rules(cli.json);
             Ok(0)
+        }
+    }
+}
+
+fn replay(args: ReplayArgs, as_json: bool) -> Result<i32> {
+    let surface = normalize(&load_idl_from_file(&args.new)?)?;
+    let cluster = Cluster::parse(&args.cluster);
+    let samples = fetch_program_accounts(&cluster, &args.program, args.limit)
+        .with_context(|| format!("sampling accounts from program {}", args.program))?;
+    let report = validate_surface(&surface, &samples);
+
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        render_replay(&report);
+    }
+
+    Ok(if report.is_clean() { 0 } else { 1 })
+}
+
+fn render_replay(report: &ratchet_svm::ReplayReport) {
+    println!(
+        "sampled {} accounts; {} matched cleanly",
+        report.total_samples,
+        report.total_samples - report.failing()
+    );
+    for (ty, tally) in &report.tallies_by_type {
+        println!(
+            "  {ty}: {ok} ok, {under} undersized, {unk} unknown",
+            ok = tally.ok,
+            under = tally.undersized,
+            unk = tally.unknown,
+        );
+    }
+    let failures: Vec<_> = report
+        .verdicts
+        .iter()
+        .filter(|v| !matches!(v, ratchet_svm::AccountVerdict::Ok { .. }))
+        .collect();
+    if failures.is_empty() {
+        return;
+    }
+    println!("\nfailing accounts (showing up to 20):");
+    for f in failures.iter().take(20) {
+        match f {
+            ratchet_svm::AccountVerdict::Undersized {
+                pubkey,
+                account_type,
+                actual,
+                expected_min,
+            } => {
+                println!(
+                    "  UNDERSIZED {pubkey}  type={account_type}  got {actual}B, expected >= {expected_min}B"
+                );
+            }
+            ratchet_svm::AccountVerdict::UnknownDiscriminator {
+                pubkey,
+                discriminator,
+            } => {
+                let hex: String = discriminator.iter().map(|b| format!("{b:02x}")).collect();
+                println!("  UNKNOWN    {pubkey}  disc=0x{hex}");
+            }
+            ratchet_svm::AccountVerdict::Malformed { pubkey, reason } => {
+                println!("  MALFORMED  {pubkey}  {reason}");
+            }
+            ratchet_svm::AccountVerdict::Ok { .. } => {}
         }
     }
 }

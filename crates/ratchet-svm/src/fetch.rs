@@ -4,7 +4,6 @@ use anyhow::{bail, Context, Result};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
 use ratchet_anchor::Cluster;
-use serde::Deserialize;
 use serde_json::json;
 
 /// A single program-owned account: pubkey plus the raw data blob.
@@ -78,17 +77,18 @@ pub fn fetch_program_accounts(
 }
 
 /// Deserialize-only helper for tests that don't want to hit a network.
+#[cfg(test)]
 pub(crate) fn parse_program_accounts_json(raw: &str) -> Result<Vec<ProgramAccount>> {
-    #[derive(Deserialize)]
+    #[derive(serde::Deserialize)]
     struct Rpc {
         result: Vec<Entry>,
     }
-    #[derive(Deserialize)]
+    #[derive(serde::Deserialize)]
     struct Entry {
         pubkey: String,
         account: AccountData,
     }
-    #[derive(Deserialize)]
+    #[derive(serde::Deserialize)]
     struct AccountData {
         data: (String, String),
     }

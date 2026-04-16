@@ -8,6 +8,7 @@
 pub mod diagnostics;
 pub mod engine;
 pub mod rule;
+pub mod rules;
 pub mod surface;
 
 pub use diagnostics::{Finding, Path, Report, Severity};

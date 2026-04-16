@@ -30,11 +30,10 @@ pub fn check(
     report
 }
 
-/// Built-in rules. Rules are appended here as they land. The vector is
-/// intentionally a fresh allocation per call so rule state cannot leak
-/// between runs.
+/// Built-in rules. The vector is intentionally a fresh allocation per call
+/// so rule state cannot leak between runs.
 pub fn default_rules() -> Vec<Box<dyn Rule>> {
-    Vec::new()
+    crate::rules::all()
 }
 
 #[cfg(test)]
@@ -95,7 +94,8 @@ mod tests {
     }
 
     #[test]
-    fn default_rules_is_empty_until_rules_land() {
-        assert!(default_rules().is_empty());
+    fn default_rules_contains_r001() {
+        let rules = default_rules();
+        assert!(rules.iter().any(|r| r.id() == "R001"));
     }
 }

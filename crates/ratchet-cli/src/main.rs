@@ -5,7 +5,9 @@ use std::process::ExitCode;
 
 use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand};
-use ratchet_anchor::{fetch_idl_account, load_idl_from_file, normalize, Cluster};
+use ratchet_anchor::{
+    fetch_idl_account, fetch_idl_for_program, load_idl_from_file, normalize, Cluster,
+};
 use ratchet_core::{check, default_rules, CheckContext, ProgramSurface, Report, Severity};
 use ratchet_lock::{Lockfile, DEFAULT_FILENAME};
 
@@ -52,7 +54,9 @@ struct CheckUpgradeArgs {
     lock: Option<PathBuf>,
 
     /// Program id whose on-chain IDL should be fetched as the baseline.
-    /// Automatic IDL-account derivation is deferred; use `--idl-account`.
+    /// `ratchet` derives the Anchor IDL account address from the program id
+    /// (`create_with_seed(find_program_address(&[], pid).0, "anchor:idl", pid)`)
+    /// and reads it over `--cluster`.
     #[arg(long, group = "old_source")]
     program: Option<String>,
 
@@ -77,13 +81,17 @@ struct CheckUpgradeArgs {
 
 #[derive(Debug, Args)]
 struct LockArgs {
-    /// Source IDL path. Mutually exclusive with `--idl-account`.
+    /// Source IDL path.
     #[arg(long, group = "source")]
     from_idl: Option<PathBuf>,
 
-    /// IDL account pubkey to fetch. Mutually exclusive with `--from-idl`.
+    /// IDL account pubkey to fetch.
     #[arg(long, group = "source")]
     idl_account: Option<String>,
+
+    /// Program id; IDL account is derived from it and fetched over --cluster.
+    #[arg(long, group = "source")]
+    program: Option<String>,
 
     /// Cluster shorthand (mainnet, devnet, testnet) or RPC URL.
     #[arg(long, default_value = "mainnet")]
@@ -188,11 +196,10 @@ fn load_old(args: &CheckUpgradeArgs) -> Result<ProgramSurface> {
         let idl = fetch_idl_account(&cluster, pubkey)?;
         return normalize(&idl);
     }
-    if args.program.is_some() {
-        bail!(
-            "automatic IDL-account derivation from --program is not yet implemented; \
-             pass --idl-account <PUBKEY> explicitly (see `solana-verify` output or Solscan)"
-        );
+    if let Some(program_id) = &args.program {
+        let cluster = Cluster::parse(&args.cluster);
+        let idl = fetch_idl_for_program(&cluster, program_id)?;
+        return normalize(&idl);
     }
     bail!("need one of --old <PATH>, --lock <PATH>, --idl-account <PUBKEY>, or --program <PID>")
 }
@@ -203,8 +210,11 @@ fn lock(args: LockArgs, as_json: bool) -> Result<i32> {
     } else if let Some(pubkey) = &args.idl_account {
         let cluster = Cluster::parse(&args.cluster);
         normalize(&fetch_idl_account(&cluster, pubkey)?)?
+    } else if let Some(program_id) = &args.program {
+        let cluster = Cluster::parse(&args.cluster);
+        normalize(&fetch_idl_for_program(&cluster, program_id)?)?
     } else {
-        bail!("need one of --from-idl <PATH> or --idl-account <PUBKEY>");
+        bail!("need one of --from-idl <PATH>, --idl-account <PUBKEY>, or --program <PID>");
     };
 
     let lockfile = Lockfile::of(surface);

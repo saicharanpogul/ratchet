@@ -13,6 +13,7 @@ use serde_json::json;
 
 use crate::decode::decode_idl_account;
 use crate::idl::AnchorIdl;
+use crate::pda::{anchor_idl_address, decode_pubkey, encode_pubkey};
 
 /// Cluster shorthand. Accepts the three well-known clusters or an explicit
 /// RPC URL.
@@ -51,6 +52,17 @@ impl Cluster {
 pub fn fetch_idl_account(cluster: &Cluster, idl_account_pubkey: &str) -> Result<AnchorIdl> {
     let raw = rpc_get_account_data(cluster.url(), idl_account_pubkey)?;
     decode_idl_account(&raw)
+}
+
+/// Fetch the Anchor IDL for a program, auto-deriving the IDL account.
+///
+/// Equivalent to `fetch_idl_account(cluster, &anchor_idl_address(program_id))`
+/// but takes a base58 program id for convenience.
+pub fn fetch_idl_for_program(cluster: &Cluster, program_id_b58: &str) -> Result<AnchorIdl> {
+    let program_id = decode_pubkey(program_id_b58)?;
+    let idl_address = anchor_idl_address(&program_id);
+    let idl_b58 = encode_pubkey(&idl_address);
+    fetch_idl_account(cluster, &idl_b58)
 }
 
 fn rpc_get_account_data(rpc_url: &str, pubkey: &str) -> Result<Vec<u8>> {

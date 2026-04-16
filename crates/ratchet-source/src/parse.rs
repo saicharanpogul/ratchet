@@ -18,13 +18,13 @@
 
 use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{Context, Result};
 use ratchet_core::PdaSpec;
 use syn::visit::Visit;
 use syn::{
-    Attribute, Expr, ExprLit, ExprPath, ImplItem, Item, ItemFn, ItemImpl, ItemMod, ItemStruct,
+    Attribute, Expr, ExprLit, ExprPath, ImplItem, ItemFn, ItemImpl, ItemMod, ItemStruct,
     Lit, Meta, Pat,
 };
 use walkdir::WalkDir;

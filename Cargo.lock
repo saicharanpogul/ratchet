@@ -503,6 +503,7 @@ dependencies = [
  "ratchet-anchor",
  "ratchet-core",
  "ratchet-lock",
+ "ratchet-source",
  "serde",
  "serde_json",
 ]

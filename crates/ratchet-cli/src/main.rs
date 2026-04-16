@@ -10,6 +10,7 @@ use ratchet_anchor::{
 };
 use ratchet_core::{check, default_rules, CheckContext, ProgramSurface, Report, Severity};
 use ratchet_lock::{Lockfile, DEFAULT_FILENAME};
+use ratchet_source::parse_dir;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -46,22 +47,22 @@ struct CheckUpgradeArgs {
     new: PathBuf,
 
     /// Path to the old (deployed / baseline) IDL JSON.
-    #[arg(long, group = "old_source")]
+    #[arg(long, group = "baseline")]
     old: Option<PathBuf>,
 
     /// Path to a committed `ratchet.lock` to use as the baseline.
-    #[arg(long, group = "old_source")]
+    #[arg(long, group = "baseline")]
     lock: Option<PathBuf>,
 
     /// Program id whose on-chain IDL should be fetched as the baseline.
     /// `ratchet` derives the Anchor IDL account address from the program id
     /// (`create_with_seed(find_program_address(&[], pid).0, "anchor:idl", pid)`)
     /// and reads it over `--cluster`.
-    #[arg(long, group = "old_source")]
+    #[arg(long, group = "baseline")]
     program: Option<String>,
 
     /// Explicit Anchor IDL account pubkey to fetch as the baseline.
-    #[arg(long, group = "old_source")]
+    #[arg(long, group = "baseline")]
     idl_account: Option<String>,
 
     /// Cluster shorthand (mainnet, devnet, testnet) or an explicit RPC URL.
@@ -77,6 +78,18 @@ struct CheckUpgradeArgs {
     /// `Migration<From, To>` or a manual `realloc` handler). Repeatable.
     #[arg(long = "migrated-account", value_name = "NAME")]
     migrated_accounts: Vec<String>,
+
+    /// Anchor program source directory. When set, ratchet parses
+    /// `#[account(seeds = [...])]` attributes and augments the new
+    /// surface with seed components the IDL may have lost.
+    #[arg(long = "new-source", value_name = "DIR")]
+    new_source: Option<PathBuf>,
+
+    /// Same, for the old surface. Only useful when the baseline comes
+    /// from --old rather than a lock or RPC (locks capture source-augmented
+    /// seeds when they were written).
+    #[arg(long = "old-source", value_name = "DIR")]
+    old_source: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -96,6 +109,12 @@ struct LockArgs {
     /// Cluster shorthand (mainnet, devnet, testnet) or RPC URL.
     #[arg(long, default_value = "mainnet")]
     cluster: String,
+
+    /// Optional Anchor program source directory. When provided, the
+    /// locked surface is augmented with richer PDA seed info parsed
+    /// from source.
+    #[arg(long = "source-dir", value_name = "DIR")]
+    source_dir: Option<PathBuf>,
 
     /// Output path for the lockfile.
     #[arg(long, default_value = DEFAULT_FILENAME)]
@@ -153,8 +172,15 @@ fn list_rules(as_json: bool) {
 }
 
 fn check_upgrade(args: CheckUpgradeArgs, as_json: bool) -> Result<i32> {
-    let new = load_new(&args)?;
-    let old = load_old(&args)?;
+    let mut new = load_new(&args)?;
+    let mut old = load_old(&args)?;
+
+    if let Some(dir) = &args.new_source {
+        augment_from_source(&mut new, dir, "new")?;
+    }
+    if let Some(dir) = &args.old_source {
+        augment_from_source(&mut old, dir, "old")?;
+    }
 
     let mut ctx = CheckContext::new();
     for flag in &args.unsafes {
@@ -205,7 +231,7 @@ fn load_old(args: &CheckUpgradeArgs) -> Result<ProgramSurface> {
 }
 
 fn lock(args: LockArgs, as_json: bool) -> Result<i32> {
-    let surface = if let Some(path) = &args.from_idl {
+    let mut surface = if let Some(path) = &args.from_idl {
         normalize(&load_idl_from_file(path)?)?
     } else if let Some(pubkey) = &args.idl_account {
         let cluster = Cluster::parse(&args.cluster);
@@ -216,6 +242,10 @@ fn lock(args: LockArgs, as_json: bool) -> Result<i32> {
     } else {
         bail!("need one of --from-idl <PATH>, --idl-account <PUBKEY>, or --program <PID>");
     };
+
+    if let Some(dir) = &args.source_dir {
+        augment_from_source(&mut surface, dir, "lock")?;
+    }
 
     let lockfile = Lockfile::of(surface);
     lockfile
@@ -247,6 +277,30 @@ fn lock(args: LockArgs, as_json: bool) -> Result<i32> {
     }
 
     Ok(0)
+}
+
+fn augment_from_source(
+    surface: &mut ProgramSurface,
+    dir: &std::path::Path,
+    side: &str,
+) -> Result<()> {
+    let scan =
+        parse_dir(dir).with_context(|| format!("scanning {side} source at {}", dir.display()))?;
+    let applied = scan.patch.apply_to(surface);
+    eprintln!(
+        "ratchet: parsed {} .rs file(s) in {side} source, filled {} PDA slot(s){}",
+        scan.files_parsed,
+        applied,
+        if scan.unresolved_structs.is_empty() {
+            "".into()
+        } else {
+            format!(
+                " ({} struct(s) had no Context<_> binding)",
+                scan.unresolved_structs.len()
+            )
+        }
+    );
+    Ok(())
 }
 
 fn render_human(report: &Report) {

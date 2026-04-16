@@ -8,7 +8,6 @@
 //! comparable by source text, so a seed-expression change is still
 //! caught even when we can't name its components.
 
-use proc_macro2::Span;
 use quote::ToTokens;
 use ratchet_core::Seed;
 use syn::{Expr, ExprLit, Lit};
@@ -207,10 +206,4 @@ mod tests {
         assert!(matches!(s, Seed::Account { .. }));
     }
 
-    #[allow(dead_code)]
-    fn _ensure_span_accessible() {
-        // proc_macro2::Span is used via to_token_stream; verify the import
-        // chain stays linked.
-        let _: Span = Span::call_site();
-    }
 }

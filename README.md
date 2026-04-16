@@ -18,9 +18,18 @@ Every diff is classified as:
 
 ## Status
 
-Pre-alpha. Phases 0–3 shipped: IR, 13 rules across accounts / instructions / enums / PDAs, Anchor IDL adapter, `ratchet.lock`, CLI with JSON output, CI-friendly exit codes.
+Alpha. Phases 0–4 shipped:
 
-Coming next: automatic IDL-account derivation from `--program`, Squads proposal diff view, LiteSVM/Surfpool runtime replay, Quasar compiler-pass mode, GitHub Action.
+- framework-agnostic IR and rule engine
+- 13 rules across accounts / instructions / enums / PDAs
+- Anchor IDL adapter — file loader, RPC fetcher with auto-derived IDL account address from `--program`, on-chain account decoder
+- `ratchet.lock` format for committable baselines
+- `syn`-based Anchor source parser that fills in PDA seeds the IDL lost
+- `ratchet replay` — samples live program accounts via RPC and flags ones that don't match the new IDL's minimum layout
+- GitHub Action
+- human + JSON output, CI-friendly exit codes (0 safe, 1 breaking, 2 unsafe)
+
+Coming next: Squads proposal diff view, literal LiteSVM program deploy, Quasar compiler-pass mode.
 
 ## Install
 
@@ -53,11 +62,37 @@ ratchet check-upgrade --lock ratchet.lock --new target/idl/vault.json
 ### Diff against the on-chain IDL
 
 ```sh
+# Auto-derive the Anchor IDL account address from the program id
+ratchet check-upgrade \
+  --program <PROGRAM_ID> \
+  --cluster mainnet \
+  --new target/idl/vault.json
+
+# Or point at an explicit IDL account (e.g. for programs with custom layouts)
 ratchet check-upgrade \
   --idl-account <IDL_ACCOUNT_PUBKEY> \
   --cluster mainnet \
   --new target/idl/vault.json
 ```
+
+### Augment from source for richer PDA checks
+
+Anchor 0.30+ IDLs capture PDA seeds but sometimes flatten account-field references. Point `ratchet` at your program source to parse `#[account(seeds = [...])]` directly:
+
+```sh
+ratchet check-upgrade --lock ratchet.lock --new target/idl/vault.json \
+  --new-source programs/vault/src
+```
+
+### Sample live accounts and verify they still match
+
+```sh
+ratchet replay --program <PROGRAM_ID> \
+  --new target/idl/vault.json \
+  --limit 500
+```
+
+Pulls up to 500 program-owned accounts via `getProgramAccounts`, classifies each by the Anchor discriminator, and flags any whose data is shorter than the new IDL's minimum layout (the common 'old layout never reallocated' failure).
 
 ### Acknowledge an intentional change
 
@@ -143,11 +178,16 @@ Exit code `1`.
 
 ```
 ratchet/
+├── action.yml                      # GitHub Action (composite)
 ├── crates/
-│   ├── ratchet-core/     # framework-agnostic IR and rule engine
-│   ├── ratchet-anchor/   # Anchor IDL loader, decoder, normalizer, RPC fetch
-│   ├── ratchet-lock/     # ratchet.lock format
-│   └── ratchet-cli/      # the `ratchet` binary
+│   ├── ratchet-core/               # framework-agnostic IR and rule engine
+│   ├── ratchet-anchor/             # Anchor IDL loader, decoder, normalizer, RPC fetch, PDA derivation
+│   ├── ratchet-lock/               # ratchet.lock format
+│   ├── ratchet-source/             # syn-based source parser for PDA seeds
+│   ├── ratchet-svm/                # sample-account runtime-replay verification
+│   └── ratchet-cli/                # the `ratchet` binary
+├── examples/
+│   └── github-workflow.yml
 └── ...
 ```
 

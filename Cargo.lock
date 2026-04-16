@@ -544,6 +544,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ratchet-svm"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "base64",
+ "bs58",
+ "ratchet-anchor",
+ "ratchet-core",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "ureq",
+]
+
+[[package]]
 name = "ring"
 version = "0.17.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"

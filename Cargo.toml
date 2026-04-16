@@ -5,6 +5,7 @@ members = [
     "crates/ratchet-anchor",
     "crates/ratchet-lock",
     "crates/ratchet-source",
+    "crates/ratchet-svm",
     "crates/ratchet-cli",
 ]
 

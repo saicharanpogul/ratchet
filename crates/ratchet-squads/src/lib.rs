@@ -235,16 +235,14 @@ mod tests {
     use super::*;
 
     fn synth_upgrade_blob() -> Vec<u8> {
+        // Garbage shape that happens to contain both the loader program
+        // id and the Upgrade discriminator as a byte substring. Used
+        // only to exercise the heuristic fallback path.
         let mut data = Vec::new();
-        // Fake 8-byte Squads account discriminator
         data.extend_from_slice(&[0xaa; 8]);
-        // BPF loader pubkey embedded somewhere
         data.extend_from_slice(&decode_pubkey(BPF_LOADER_UPGRADEABLE_PROGRAM_ID).unwrap());
-        // Arbitrary padding
         data.extend_from_slice(&[0u8; 16]);
-        // Upgrade discriminator (u32 LE = 3)
         data.extend_from_slice(&BPF_LOADER_UPGRADE_DISCRIMINATOR);
-        // Some trailing account metas
         data.extend_from_slice(&[1u8; 96]);
         data
     }
@@ -330,19 +328,19 @@ mod tests {
 
         // account_keys: loader is at index 7, followed by the Upgrade
         // instruction's 7 accounts (program_data, program, buffer, spill,
-        // rent, clock, authority) in order. The compiled ix will reference
-        // these by index into this array.
+        // rent, clock, authority) in order. SmallVec<u8, Pubkey> — 1-byte
+        // prefix, not Borsh u32.
         let keys: Vec<&[u8; 32]> =
             vec![&program_data, &program, &buf_key, &spill, &rent, &clock, &authority, &loader];
-        blob.extend_from_slice(&(keys.len() as u32).to_le_bytes());
+        blob.push(keys.len() as u8);
         for k in &keys {
             blob.extend_from_slice(*k);
         }
 
         // One compiled instruction: program_id_index=7 (loader), account
         // indexes 0..=6 pointing at the 7 upgrade accounts, data =
-        // Upgrade discriminator.
-        blob.extend_from_slice(&(1u32).to_le_bytes());
+        // Upgrade discriminator. SmallVec<u8, CompiledInstruction>.
+        blob.push(1u8); // ix count
         blob.push(7); // program_id_index
         blob.push(7); // account_indexes len (SmallVec<u8,u8>)
         for i in 0u8..7 {
@@ -351,8 +349,8 @@ mod tests {
         blob.extend_from_slice(&(4u16).to_le_bytes()); // data len
         blob.extend_from_slice(&BPF_LOADER_UPGRADE_DISCRIMINATOR);
 
-        // No ATLs
-        blob.extend_from_slice(&(0u32).to_le_bytes());
+        // No ATLs (SmallVec<u8, ...>)
+        blob.push(0u8);
 
         (blob, target_program.into(), buffer.into())
     }

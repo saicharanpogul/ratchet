@@ -56,16 +56,20 @@ pub struct VaultTransactionMessage {
 
 impl VaultTransactionMessage {
     pub(crate) fn read(c: &mut Cursor) -> Result<Self> {
+        // Squads V4's VaultTransactionMessage uses SmallVec<u8, T> with
+        // a single-byte length prefix for its three inner vectors —
+        // *not* Borsh's default u32-prefixed Vec. This matches the
+        // upstream `squads_multisig_program::state::vault_transaction`.
         let num_signers = c.u8()?;
         let num_writable_signers = c.u8()?;
         let num_writable_non_signers = c.u8()?;
-        let account_keys = c.vec_pubkey_borsh()?;
-        let ix_len = c.u32_le()? as usize;
+        let account_keys = c.small_vec_pubkey_u8()?;
+        let ix_len = c.u8()? as usize;
         let mut instructions = Vec::with_capacity(ix_len);
         for _ in 0..ix_len {
             instructions.push(CompiledInstruction::read(c)?);
         }
-        let atl_len = c.u32_le()? as usize;
+        let atl_len = c.u8()? as usize;
         let mut address_table_lookups = Vec::with_capacity(atl_len);
         for _ in 0..atl_len {
             address_table_lookups.push(MessageAddressTableLookup::read(c)?);
@@ -154,13 +158,13 @@ mod tests {
         buf.push(1); // num_writable_signers
         buf.push(1); // num_writable_non_signers
 
-        // account_keys (Borsh Vec<Pubkey>): two pubkeys
-        buf.extend_from_slice(&(2u32).to_le_bytes());
+        // account_keys (SmallVec<u8, Pubkey>): two pubkeys, u8 prefix
+        buf.push(2u8);
         buf.extend_from_slice(&[0x11; 32]);
         buf.extend_from_slice(&[0x22; 32]);
 
-        // instructions (Borsh Vec<CompiledInstruction>): 1 ix
-        buf.extend_from_slice(&(1u32).to_le_bytes());
+        // instructions (SmallVec<u8, CompiledInstruction>): 1 ix, u8 prefix
+        buf.push(1u8);
         buf.push(0); // program_id_index
         // account_indexes SmallVec<u8,u8>: [0]
         buf.push(1);
@@ -169,8 +173,8 @@ mod tests {
         buf.extend_from_slice(&(4u16).to_le_bytes());
         buf.extend_from_slice(b"ABCD");
 
-        // address_table_lookups: empty
-        buf.extend_from_slice(&(0u32).to_le_bytes());
+        // address_table_lookups (SmallVec<u8, ...>): empty, u8 prefix
+        buf.push(0u8);
 
         buf
     }

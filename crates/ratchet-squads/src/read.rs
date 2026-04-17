@@ -91,6 +91,16 @@ impl<'a> Cursor<'a> {
         let len = self.u16_le()? as usize;
         Ok(self.take(len)?.to_vec())
     }
+
+    /// Squads `SmallVec<u8, Pubkey>`: 1-byte length then 32-byte entries.
+    pub fn small_vec_pubkey_u8(&mut self) -> Result<Vec<[u8; 32]>> {
+        let len = self.u8()? as usize;
+        let mut out = Vec::with_capacity(len);
+        for _ in 0..len {
+            out.push(self.pubkey()?);
+        }
+        Ok(out)
+    }
 }
 
 #[cfg(test)]
@@ -134,5 +144,18 @@ mod tests {
         assert_eq!(pks.len(), 2);
         assert_eq!(pks[0][0], 0xAA);
         assert_eq!(pks[1][0], 0xBB);
+    }
+
+    #[test]
+    fn small_vec_pubkey_uses_u8_prefix() {
+        let mut buf = vec![];
+        buf.push(2u8);
+        buf.extend_from_slice(&[0xCC; 32]);
+        buf.extend_from_slice(&[0xDD; 32]);
+        let mut c = Cursor::new(&buf);
+        let pks = c.small_vec_pubkey_u8().unwrap();
+        assert_eq!(pks.len(), 2);
+        assert_eq!(pks[0][0], 0xCC);
+        assert_eq!(pks[1][0], 0xDD);
     }
 }

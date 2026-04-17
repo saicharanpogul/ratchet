@@ -16,5 +16,4 @@ categories.workspace = true
 ratchet-core = { path = "../ratchet-core", version = "0.0.1" }
 serde.workspace = true
 serde_json.workspace = true
-thiserror.workspace = true
 anyhow.workspace = true

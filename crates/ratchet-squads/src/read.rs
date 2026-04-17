@@ -71,6 +71,10 @@ impl<'a> Cursor<'a> {
     }
 
     /// Borsh-style `Vec<Pubkey>`: 4-byte length then 32-byte entries.
+    /// Retained alongside `small_vec_pubkey_u8` because future Squads
+    /// schema revisions may reintroduce u32-prefixed pubkey lists on
+    /// outer types; kept as a buildable helper rather than dead code.
+    #[allow(dead_code)]
     pub fn vec_pubkey_borsh(&mut self) -> Result<Vec<[u8; 32]>> {
         let len = self.u32_le()? as usize;
         let mut out = Vec::with_capacity(len);
@@ -100,6 +104,14 @@ impl<'a> Cursor<'a> {
             out.push(self.pubkey()?);
         }
         Ok(out)
+    }
+
+    /// Read an 8-byte Anchor account discriminator prefix.
+    pub fn read_discriminator(&mut self) -> Result<[u8; 8]> {
+        let b = self.take(8)?;
+        let mut d = [0u8; 8];
+        d.copy_from_slice(b);
+        Ok(d)
     }
 }
 

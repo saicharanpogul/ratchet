@@ -14,9 +14,11 @@ pub struct ProgramAccount {
 }
 
 /// Fetch up to `limit` program-owned accounts via `getProgramAccounts`.
-/// `data_slice_len` caps how many bytes of each account's data are
-/// returned; the first 8 bytes (Anchor discriminator) are always
-/// retrieved so callers can classify accounts cheaply.
+/// The RPC call requests a 4-kilobyte dataSlice per account — enough to
+/// carry the Anchor discriminator and typical account bodies without
+/// pulling megabytes of data back. Callers that need the full bytes of
+/// larger accounts should fetch them individually via
+/// [`ratchet_anchor::fetch_account_data`].
 pub fn fetch_program_accounts(
     cluster: &Cluster,
     program_id_b58: &str,

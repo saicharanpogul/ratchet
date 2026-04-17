@@ -493,10 +493,10 @@ fn check_upgrade(args: CheckUpgradeArgs, as_json: bool) -> Result<i32> {
     let mut old = load_old(&args)?;
 
     if let Some(dir) = &args.new_source {
-        augment_from_source(&mut new, dir, "new")?;
+        augment_from_source(&mut new, dir, "new", as_json)?;
     }
     if let Some(dir) = &args.old_source {
-        augment_from_source(&mut old, dir, "old")?;
+        augment_from_source(&mut old, dir, "old", as_json)?;
     }
 
     let mut ctx = CheckContext::new();
@@ -568,7 +568,7 @@ fn lock(args: LockArgs, as_json: bool) -> Result<i32> {
     };
 
     if let Some(dir) = &args.source_dir {
-        augment_from_source(&mut surface, dir, "lock")?;
+        augment_from_source(&mut surface, dir, "lock", as_json)?;
     }
 
     let lockfile = Lockfile::of(surface);
@@ -607,23 +607,26 @@ fn augment_from_source(
     surface: &mut ProgramSurface,
     dir: &std::path::Path,
     side: &str,
+    quiet: bool,
 ) -> Result<()> {
     let scan =
         parse_dir(dir).with_context(|| format!("scanning {side} source at {}", dir.display()))?;
     let applied = scan.patch.apply_to(surface);
-    eprintln!(
-        "ratchet: parsed {} .rs file(s) in {side} source, filled {} PDA slot(s){}",
-        scan.files_parsed,
-        applied,
-        if scan.unresolved_structs.is_empty() {
-            "".into()
-        } else {
-            format!(
-                " ({} struct(s) had no Context<_> binding)",
-                scan.unresolved_structs.len()
-            )
-        }
-    );
+    if !quiet {
+        eprintln!(
+            "ratchet: parsed {} .rs file(s) in {side} source, filled {} PDA slot(s){}",
+            scan.files_parsed,
+            applied,
+            if scan.unresolved_structs.is_empty() {
+                "".into()
+            } else {
+                format!(
+                    " ({} struct(s) had no Context<_> binding)",
+                    scan.unresolved_structs.len()
+                )
+            }
+        );
+    }
     Ok(())
 }
 

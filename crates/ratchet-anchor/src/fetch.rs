@@ -1,10 +1,12 @@
 //! Fetch an Anchor IDL account from a JSON-RPC endpoint.
 //!
-//! For now this module requires the caller to pass the IDL account's
-//! pubkey explicitly (via `--idl-account`). Automatic derivation from a
-//! program id requires ed25519 curve math and is deferred; the flag-driven
-//! path covers the common case where the user can read the address off
-//! Solscan or similar.
+//! Two entry points:
+//! - [`fetch_idl_account`] takes the IDL account pubkey directly. Use
+//!   when the account was moved off the canonical Anchor slot, or for
+//!   non-Anchor programs that piggy-back on the Anchor IDL layout.
+//! - [`fetch_idl_for_program`] derives the IDL account address from
+//!   just the program id via `anchor_idl_address` and then fetches.
+//!   This is the path the CLI's `--program` flag uses.
 
 use anyhow::{bail, Context, Result};
 use base64::engine::general_purpose::STANDARD as BASE64;

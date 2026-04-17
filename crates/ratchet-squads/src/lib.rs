@@ -31,8 +31,12 @@ use anyhow::{bail, Result};
 use ratchet_anchor::pda::{decode_pubkey, encode_pubkey};
 use serde::{Deserialize, Serialize};
 
-/// Squads V4 canonical program id.
-pub const SQUADS_V4_PROGRAM_ID: &str = "SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf";
+// Note: the Squads V4 program id is intentionally not declared here.
+// Squads permits deploying multisig-compatible variants under other
+// program ids, and our decoder doesn't dispatch on the Squads program
+// id — it classifies the inner instruction against the canonical BPF
+// loader. Callers who need to gate on Squads identity should look up
+// the program id at the site of the RPC call.
 
 /// Official BPF upgradeable loader program id.
 pub const BPF_LOADER_UPGRADEABLE_PROGRAM_ID: &str = "BPFLoaderUpgradeab1e11111111111111111111111";
@@ -278,8 +282,7 @@ mod tests {
     }
 
     #[test]
-    fn constants_decode_to_32_bytes() {
-        assert_eq!(decode_pubkey(SQUADS_V4_PROGRAM_ID).unwrap().len(), 32);
+    fn loader_constant_decodes_to_32_bytes() {
         assert_eq!(
             decode_pubkey(BPF_LOADER_UPGRADEABLE_PROGRAM_ID).unwrap().len(),
             32

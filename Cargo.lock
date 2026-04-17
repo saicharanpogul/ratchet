@@ -2155,7 +2155,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "thiserror 2.0.18",
  "ureq",
 ]
 
@@ -2181,7 +2180,6 @@ version = "0.0.1"
 dependencies = [
  "serde",
  "serde_json",
- "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -2192,7 +2190,6 @@ dependencies = [
  "ratchet-core",
  "serde",
  "serde_json",
- "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -2203,7 +2200,6 @@ dependencies = [
  "ratchet-core",
  "serde",
  "serde_json",
- "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -2211,13 +2207,11 @@ name = "ratchet-source"
 version = "0.0.1"
 dependencies = [
  "anyhow",
- "proc-macro2",
  "quote",
  "ratchet-core",
  "serde",
  "serde_json",
  "syn 2.0.117",
- "thiserror 2.0.18",
  "walkdir",
 ]
 
@@ -2230,7 +2224,6 @@ dependencies = [
  "ratchet-anchor",
  "serde",
  "serde_json",
- "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -2239,14 +2232,12 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
- "bs58",
  "litesvm",
  "ratchet-anchor",
  "ratchet-core",
  "serde",
  "serde_json",
  "solana-pubkey",
- "thiserror 2.0.18",
  "ureq",
 ]
 

@@ -104,7 +104,7 @@ impl VaultTransaction {
     /// leading 8-byte Anchor discriminator.
     pub fn decode(data: &[u8]) -> Result<Self> {
         let mut c = Cursor::new(data);
-        let disc = c.pubkey_like_disc()?;
+        let disc = c.read_discriminator()?;
         let multisig = c.pubkey()?;
         let creator = c.pubkey()?;
         let index = c.u64_le()?;
@@ -124,15 +124,6 @@ impl VaultTransaction {
             ephemeral_signer_bumps,
             message,
         })
-    }
-}
-
-impl Cursor<'_> {
-    fn pubkey_like_disc(&mut self) -> Result<[u8; 8]> {
-        let b = self.take(8)?;
-        let mut d = [0u8; 8];
-        d.copy_from_slice(b);
-        Ok(d)
     }
 }
 

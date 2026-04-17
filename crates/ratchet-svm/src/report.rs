@@ -74,21 +74,31 @@ pub enum AccountVerdict {
 }
 
 mod disc_hex {
+    //! Discriminator hex format matches R006 / R014 findings: `0x` prefix
+    //! followed by 16 lowercase hex characters.
     use serde::{Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S: Serializer>(d: &[u8; 8], s: S) -> Result<S::Ok, S::Error> {
-        let hex: String = d.iter().map(|b| format!("{b:02x}")).collect();
-        s.serialize_str(&hex)
+        let mut out = String::with_capacity(18);
+        out.push_str("0x");
+        for b in d {
+            out.push_str(&format!("{b:02x}"));
+        }
+        s.serialize_str(&out)
     }
 
     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<[u8; 8], D::Error> {
         let s = String::deserialize(d)?;
-        if s.len() != 16 {
-            return Err(serde::de::Error::custom("expected 16 hex chars"));
+        let body = s.strip_prefix("0x").unwrap_or(&s);
+        if body.len() != 16 {
+            return Err(serde::de::Error::custom(format!(
+                "expected 16 hex chars (with optional 0x prefix), got {}",
+                body.len()
+            )));
         }
         let mut out = [0u8; 8];
         for (i, byte) in out.iter_mut().enumerate() {
-            *byte = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16)
+            *byte = u8::from_str_radix(&body[i * 2..i * 2 + 2], 16)
                 .map_err(serde::de::Error::custom)?;
         }
         Ok(out)

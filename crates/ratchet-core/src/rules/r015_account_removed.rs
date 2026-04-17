@@ -94,7 +94,9 @@ mod tests {
     #[test]
     fn identical_account_set_no_finding() {
         let s = surface_with([acc("Vault"), acc("User")]);
-        assert!(AccountRemoved.check(&s, &s, &CheckContext::new()).is_empty());
+        assert!(AccountRemoved
+            .check(&s, &s, &CheckContext::new())
+            .is_empty());
     }
 
     #[test]

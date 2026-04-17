@@ -2207,6 +2207,7 @@ name = "ratchet-source"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "proc-macro2",
  "quote",
  "ratchet-core",
  "serde",

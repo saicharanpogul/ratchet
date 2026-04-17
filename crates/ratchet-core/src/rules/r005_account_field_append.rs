@@ -6,10 +6,15 @@
 //! reallocated (via `Migration<From, To>` or a manual `realloc` in an
 //! update instruction), the new binary will fail to deserialize them.
 //!
-//! Emitted as `Unsafe` by default with an `allow-field-append` escape hatch.
-//! When the account is listed in `CheckContext::migrated_accounts`, the
-//! rule reports it as `Additive` — the developer explicitly promised a
-//! migration.
+//! Severity ladder:
+//! - `Unsafe` by default with an `allow-field-append` escape hatch.
+//! - `Additive` when a migration is declared for the account
+//!   (`--migrated-account Vault` or Anchor 1.0's `Migration<From, To>`).
+//! - `Additive` when a realloc constraint is declared for the account
+//!   (`--realloc-account Vault`, or auto-detected from source when the
+//!   field carries `#[account(mut, realloc = ...)]`). Realloc is even
+//!   tighter than migration: every ix that touches the account
+//!   automatically resizes it.
 
 use std::collections::HashSet;
 
@@ -62,8 +67,10 @@ impl Rule for AccountFieldAppend {
                     continue; // handled by R004
                 }
 
+                let has_realloc = ctx.has_realloc(name);
                 let has_migration = ctx.has_migration(name);
-                let severity = if has_migration {
+                let auto_safe = has_realloc || has_migration;
+                let severity = if auto_safe {
                     Severity::Additive
                 } else {
                     Severity::Unsafe
@@ -75,9 +82,14 @@ impl Rule for AccountFieldAppend {
                         format!("field:{}", new_field.name),
                     ])
                     .new_value(format!("{}", new_field.ty));
-                if has_migration {
+                if has_realloc {
                     finding = finding.message(format!(
-                        "field `{}.{}` appended; migration declared for `{}`, safe to apply",
+                        "field `{}.{}` appended; realloc constraint declared for `{}` — every ix call auto-resizes (not verified by ratchet)",
+                        name, new_field.name, name
+                    ));
+                } else if has_migration {
+                    finding = finding.message(format!(
+                        "field `{}.{}` appended; migration declared for `{}` (not verified by ratchet)",
                         name, new_field.name, name
                     ));
                 } else {
@@ -88,9 +100,9 @@ impl Rule for AccountFieldAppend {
                         ))
                         .allow_flag("allow-field-append")
                         .suggestion(
-                            "Reallocate existing accounts in an update instruction, or wrap \
-                             the account with `Migration<Old, New>` (Anchor 1.0+) so the \
-                             runtime handles old vs new layouts.",
+                            "Reallocate existing accounts in an update instruction, declare \
+                             the account in --realloc-account / --migrated-account, or wrap \
+                             it with `Migration<Old, New>` (Anchor 1.0+).",
                         );
                 }
                 findings.push(finding);
@@ -185,6 +197,38 @@ mod tests {
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].severity, Severity::Additive);
         assert!(findings[0].allow_flag.is_none());
+    }
+
+    #[test]
+    fn realloc_declaration_demotes_to_additive() {
+        let old = surface(acc(vec![f("a", PrimitiveType::U64)]));
+        let new = surface(acc(vec![
+            f("a", PrimitiveType::U64),
+            f("extra", PrimitiveType::U32),
+        ]));
+        let ctx = CheckContext::new().with_realloc("Vault");
+        let findings = AccountFieldAppend.check(&old, &new, &ctx);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].severity, Severity::Additive);
+        assert!(findings[0].allow_flag.is_none());
+        assert!(findings[0].message.contains("realloc"));
+    }
+
+    #[test]
+    fn realloc_message_distinct_from_migration() {
+        // Same surface, different ctx path. Ensures the two declaration
+        // methods produce different messages so downstream readers can
+        // tell which signal a developer actually gave.
+        let old = surface(acc(vec![f("a", PrimitiveType::U64)]));
+        let new = surface(acc(vec![
+            f("a", PrimitiveType::U64),
+            f("extra", PrimitiveType::U32),
+        ]));
+        let realloc_ctx = CheckContext::new().with_realloc("Vault");
+        let migration_ctx = CheckContext::new().with_migration("Vault");
+        let r = AccountFieldAppend.check(&old, &new, &realloc_ctx);
+        let m = AccountFieldAppend.check(&old, &new, &migration_ctx);
+        assert_ne!(r[0].message, m[0].message);
     }
 
     #[test]

@@ -93,6 +93,15 @@ struct CheckUpgradeArgs {
     #[arg(long = "migrated-account", value_name = "NAME")]
     migrated_accounts: Vec<String>,
 
+    /// Account name whose Anchor definition carries a `realloc = ...`
+    /// constraint, meaning every instruction that touches the account
+    /// will automatically resize it. Demotes R005 appends to Additive
+    /// with a realloc-specific message. Repeatable. Source parsing
+    /// (`--new-source`) populates this automatically when it spots the
+    /// attribute.
+    #[arg(long = "realloc-account", value_name = "NAME")]
+    realloc_accounts: Vec<String>,
+
     /// Anchor program source directory. When set, ratchet parses
     /// `#[account(seeds = [...])]` attributes and augments the new
     /// surface with seed components the IDL may have lost.
@@ -497,19 +506,23 @@ fn check_upgrade(args: CheckUpgradeArgs, as_json: bool) -> Result<i32> {
     let mut new = load_new(&args)?;
     let mut old = load_old(&args)?;
 
+    let mut ctx = CheckContext::new();
+
     if let Some(dir) = &args.new_source {
-        augment_from_source(&mut new, dir, "new", as_json)?;
+        augment_from_source(&mut new, dir, "new", as_json, &mut ctx)?;
     }
     if let Some(dir) = &args.old_source {
-        augment_from_source(&mut old, dir, "old", as_json)?;
+        augment_from_source(&mut old, dir, "old", as_json, &mut ctx)?;
     }
 
-    let mut ctx = CheckContext::new();
     for flag in &args.unsafes {
         ctx = ctx.with_allow(flag.trim_start_matches("--"));
     }
     for name in &args.migrated_accounts {
         ctx = ctx.with_migration(name);
+    }
+    for name in &args.realloc_accounts {
+        ctx = ctx.with_realloc(name);
     }
 
     let rules = default_rules();
@@ -573,7 +586,10 @@ fn lock(args: LockArgs, as_json: bool) -> Result<i32> {
     };
 
     if let Some(dir) = &args.source_dir {
-        augment_from_source(&mut surface, dir, "lock", as_json)?;
+        // lock uses a throwaway ctx since realloc info doesn't affect what
+        // we write — only R005 cares about it at check time.
+        let mut throwaway_ctx = CheckContext::new();
+        augment_from_source(&mut surface, dir, "lock", as_json, &mut throwaway_ctx)?;
     }
 
     let lockfile = Lockfile::of(surface);
@@ -613,23 +629,42 @@ fn augment_from_source(
     dir: &std::path::Path,
     side: &str,
     quiet: bool,
+    ctx: &mut CheckContext,
 ) -> Result<()> {
     let scan =
         parse_dir(dir).with_context(|| format!("scanning {side} source at {}", dir.display()))?;
     let applied = scan.patch.apply_to(surface);
-    if !quiet {
-        eprintln!(
-            "ratchet: parsed {} .rs file(s) in {side} source, filled {} PDA slot(s){}",
-            scan.files_parsed,
-            applied,
-            if scan.unresolved_structs.is_empty() {
-                "".into()
-            } else {
-                format!(
-                    " ({} struct(s) had no Context<_> binding)",
-                    scan.unresolved_structs.len()
-                )
+
+    // Auto-populate realloc-aware demotion for R005. We intentionally
+    // only touch the "new" side — the old surface's realloc attributes
+    // don't change the forward-compatibility verdict.
+    let mut realloc_added = 0usize;
+    if side == "new" {
+        for name in &scan.realloc_accounts {
+            if !ctx.has_realloc(name) {
+                *ctx = std::mem::take(ctx).with_realloc(name);
+                realloc_added += 1;
             }
+        }
+    }
+
+    if !quiet {
+        let unresolved = if scan.unresolved_structs.is_empty() {
+            String::new()
+        } else {
+            format!(
+                " ({} struct(s) had no Context<_> binding)",
+                scan.unresolved_structs.len()
+            )
+        };
+        let realloc = if realloc_added > 0 {
+            format!(", auto-declared realloc for {realloc_added} account(s)")
+        } else {
+            String::new()
+        };
+        eprintln!(
+            "ratchet: parsed {} .rs file(s) in {side} source, filled {} PDA slot(s){}{}",
+            scan.files_parsed, applied, unresolved, realloc,
         );
     }
     Ok(())

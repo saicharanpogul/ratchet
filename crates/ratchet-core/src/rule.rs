@@ -35,6 +35,11 @@ pub struct CheckContext {
     /// Accounts whose layout change is covered by a declared migration
     /// (e.g. `Migration<From, To>` in Anchor 1.0+). Keyed by account name.
     pub migrated_accounts: HashSet<String>,
+    /// Accounts that have an Anchor `realloc = ...` constraint somewhere
+    /// in source — meaning the next instruction that touches the account
+    /// will automatically resize it to the new layout. From R005's
+    /// perspective this makes field append safe.
+    pub realloc_accounts: HashSet<String>,
 }
 
 impl CheckContext {
@@ -52,12 +57,28 @@ impl CheckContext {
         self
     }
 
+    pub fn with_realloc(mut self, account: impl Into<String>) -> Self {
+        self.realloc_accounts.insert(account.into());
+        self
+    }
+
     pub fn is_allowed(&self, flag: &str) -> bool {
         self.allowed_unsafes.contains(flag)
     }
 
     pub fn has_migration(&self, account: &str) -> bool {
         self.migrated_accounts.contains(account)
+    }
+
+    pub fn has_realloc(&self, account: &str) -> bool {
+        self.realloc_accounts.contains(account)
+    }
+
+    /// True when an account append can be handled automatically — either
+    /// a migration is declared (manual rewrite) or a realloc constraint
+    /// exists (automatic resize).
+    pub fn append_is_auto_safe(&self, account: &str) -> bool {
+        self.has_migration(account) || self.has_realloc(account)
     }
 }
 

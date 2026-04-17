@@ -16,7 +16,7 @@
 //! are skipped silently — they are often helper composites that belong
 //! to the IDL's flattened account list already.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
@@ -39,6 +39,12 @@ pub struct SourceScan {
     pub structs_scanned: usize,
     pub pdas_extracted: usize,
     pub unresolved_structs: Vec<String>,
+    /// Account types (as in `Account<'info, Vault>`) whose fields
+    /// carry a `realloc = ...` constraint in any `#[account(...)]`
+    /// attribute in the scanned source. Callers forward these into
+    /// `CheckContext::realloc_accounts` so R005 can demote appends to
+    /// Additive automatically.
+    pub realloc_accounts: HashSet<String>,
     pub patch: SourcePatch,
 }
 
@@ -51,14 +57,25 @@ pub fn parse_file(path: &Path, scan: &mut SourceScan) -> Result<()> {
     let mut v = FileVisitor::default();
     v.visit_file(&file);
 
+    // Realloc detection: any account type ever marked with
+    // `#[account(..., realloc = ...)]` is forwarded verbatim to the
+    // scan output. Independent of the PDA extraction below.
+    for name in v.realloc_account_types.drain() {
+        scan.realloc_accounts.insert(name);
+    }
+
     for (struct_name, fields) in v.accounts_of {
         scan.structs_scanned += 1;
         let Some(ix_name) = v.ix_name_of.get(&struct_name) else {
             scan.unresolved_structs.push(struct_name);
             continue;
         };
-        let known_accounts: Vec<String> = fields.iter().map(|f| f.0.clone()).collect();
-        for (field, seeds_expr) in &fields {
+        let known_accounts: Vec<String> = fields
+            .iter()
+            .map(|f: &AccountsStructField| f.0.clone())
+            .collect();
+        for field in &fields {
+            let (name, seeds_expr, _ty) = field;
             let Some(seeds_expr) = seeds_expr else {
                 continue;
             };
@@ -70,7 +87,7 @@ pub fn parse_file(path: &Path, scan: &mut SourceScan) -> Result<()> {
                 seeds,
                 program_id: None,
             };
-            scan.patch.insert(ix_name, field, pda);
+            scan.patch.insert(ix_name, name, pda);
             scan.pdas_extracted += 1;
         }
     }
@@ -106,16 +123,20 @@ fn is_build_artifact(path: &Path) -> bool {
 }
 
 /// One field of an `#[derive(Accounts)]` struct, as we see it during
-/// parsing: the field's name, plus — when the field carries a
-/// `#[account(seeds = [...])]` attribute — the parsed seed expressions.
-type AccountsStructField = (String, Option<Vec<Expr>>);
+/// parsing: the field's name, the parsed seed expressions (if the
+/// field carries `#[account(seeds = [...])]`), and the extracted
+/// account-type name (the `X` in `Account<'info, X>`) when resolvable.
+type AccountsStructField = (String, Option<Vec<Expr>>, Option<String>);
 
 #[derive(Default)]
 struct FileVisitor {
     /// `ix_name_of[AccountsStructName] = instruction_name`
     ix_name_of: HashMap<String, String>,
-    /// `accounts_of[AccountsStructName] = [(field_name, seeds_expr)]`
+    /// `accounts_of[AccountsStructName] = [(field_name, seeds_expr, account_ty)]`
     accounts_of: HashMap<String, Vec<AccountsStructField>>,
+    /// Account types (`X` from `Account<'info, X>`) observed with a
+    /// `realloc = ...` constraint in any `#[account(...)]` attribute.
+    realloc_account_types: HashSet<String>,
     inside_program_mod: bool,
 }
 
@@ -159,7 +180,14 @@ impl<'ast> Visit<'ast> for FileVisitor {
             for field in &named.named {
                 let Some(ident) = &field.ident else { continue };
                 let seeds_expr = extract_seeds_from_attrs(&field.attrs);
-                fields.push((ident.to_string(), seeds_expr));
+                let account_ty = extract_account_generic(&field.ty);
+                let has_realloc = account_attrs_contain_realloc(&field.attrs);
+                if has_realloc {
+                    if let Some(ty) = &account_ty {
+                        self.realloc_account_types.insert(ty.clone());
+                    }
+                }
+                fields.push((ident.to_string(), seeds_expr, account_ty));
             }
         }
         self.accounts_of.insert(struct_name, fields);
@@ -269,6 +297,99 @@ fn extract_seeds_from_attrs(attrs: &[Attribute]) -> Option<Vec<Expr>> {
         }
     }
     None
+}
+
+/// True when any `#[account(...)]` attribute on a field contains a
+/// `realloc = <expr>` assignment. Anchor's account-attribute grammar
+/// mixes bare idents (`mut`, `init`, `close`) with key-value pairs
+/// (`realloc = ...`, `seeds = [...]`) and Rust's expression parser
+/// rejects the bare-ident entries — so we work on the token stream
+/// directly instead of `parse_args_with::<Expr>`. A token sequence
+/// containing `realloc`, `=`, anything (but *not* `::` after
+/// `realloc`, which would be `realloc::payer` / `realloc::zero`)
+/// matches.
+fn account_attrs_contain_realloc(attrs: &[Attribute]) -> bool {
+    use proc_macro2::{TokenStream, TokenTree};
+    fn scan(stream: TokenStream) -> bool {
+        let mut iter = stream.into_iter().peekable();
+        while let Some(tt) = iter.next() {
+            match tt {
+                TokenTree::Ident(ident) if ident == "realloc" => {
+                    // Next non-punct token should be `=`, not `::`.
+                    match iter.peek() {
+                        Some(TokenTree::Punct(p)) if p.as_char() == '=' => return true,
+                        _ => continue,
+                    }
+                }
+                _ => continue,
+            }
+        }
+        false
+    }
+
+    for attr in attrs {
+        if !path_is(attr.path(), "account") {
+            continue;
+        }
+        let Meta::List(list) = &attr.meta else {
+            continue;
+        };
+        if scan(list.tokens.clone()) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Extract the second generic argument of `Account<'info, T>` /
+/// `AccountLoader<'info, T>` / `Box<Account<'info, T>>`, i.e. the
+/// account-type name. Returns `None` if the field isn't a recognised
+/// Anchor account wrapper.
+fn extract_account_generic(ty: &syn::Type) -> Option<String> {
+    let ty = unwrap_single_generic_container(ty);
+    let syn::Type::Path(tp) = ty else {
+        return None;
+    };
+    let last = tp.path.segments.last()?;
+    if !matches!(
+        last.ident.to_string().as_str(),
+        "Account" | "AccountLoader" | "InterfaceAccount"
+    ) {
+        return None;
+    }
+    let syn::PathArguments::AngleBracketed(ab) = &last.arguments else {
+        return None;
+    };
+    for arg in &ab.args {
+        if let syn::GenericArgument::Type(syn::Type::Path(inner)) = arg {
+            let ident = inner.path.segments.last()?.ident.to_string();
+            return Some(ident);
+        }
+    }
+    None
+}
+
+/// Peel `Box<T>` wrappers — Anchor programs commonly use
+/// `Box<Account<'info, Vault>>` to move large accounts off the stack.
+fn unwrap_single_generic_container(ty: &syn::Type) -> &syn::Type {
+    let syn::Type::Path(tp) = ty else {
+        return ty;
+    };
+    let Some(last) = tp.path.segments.last() else {
+        return ty;
+    };
+    if last.ident != "Box" {
+        return ty;
+    }
+    let syn::PathArguments::AngleBracketed(ab) = &last.arguments else {
+        return ty;
+    };
+    for arg in &ab.args {
+        if let syn::GenericArgument::Type(inner) = arg {
+            return inner;
+        }
+    }
+    ty
 }
 
 /// Match `seeds = [a, b, c]` (a `syn::ExprAssign` with an ident LHS and an
@@ -423,6 +544,71 @@ mod tests {
         assert_eq!(scan.pdas_extracted, 0);
         assert!(scan.unresolved_structs.contains(&"Orphan".to_string()));
         let _ = fs::remove_file(&path);
+    }
+
+    const REALLOC_SAMPLE: &str = r#"
+        use anchor_lang::prelude::*;
+
+        #[program]
+        pub mod prog {
+            use super::*;
+            pub fn grow(ctx: Context<Grow>) -> Result<()> { Ok(()) }
+        }
+
+        #[derive(Accounts)]
+        pub struct Grow<'info> {
+            #[account(mut)]
+            pub payer: Signer<'info>,
+
+            #[account(
+                mut,
+                realloc = Vault::SPACE,
+                realloc::payer = payer,
+                realloc::zero = false,
+            )]
+            pub vault: Account<'info, Vault>,
+
+            pub system_program: Program<'info, System>,
+        }
+
+        #[account]
+        pub struct Vault { pub balance: u64 }
+    "#;
+
+    #[test]
+    fn realloc_attribute_is_detected() {
+        use std::io::Write;
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "ratchet-source-realloc-{}-{}.rs",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut f = fs::File::create(&path).unwrap();
+        f.write_all(REALLOC_SAMPLE.as_bytes()).unwrap();
+        let mut scan = SourceScan::default();
+        parse_file(&path, &mut scan).unwrap();
+        assert!(
+            scan.realloc_accounts.contains("Vault"),
+            "expected Vault in realloc_accounts, got {:?}",
+            scan.realloc_accounts
+        );
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn extract_account_generic_handles_box_wrapper() {
+        let ty: syn::Type = syn::parse_quote!(Box<Account<'info, Vault>>);
+        assert_eq!(extract_account_generic(&ty).as_deref(), Some("Vault"));
+    }
+
+    #[test]
+    fn extract_account_generic_rejects_non_anchor_wrappers() {
+        let ty: syn::Type = syn::parse_quote!(Signer<'info>);
+        assert!(extract_account_generic(&ty).is_none());
     }
 
     #[test]

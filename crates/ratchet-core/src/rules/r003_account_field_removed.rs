@@ -3,9 +3,16 @@
 //! A field that existed in the deployed account no longer exists in the
 //! new version. The bytes for that field are still sitting on-chain in
 //! every existing account, so the new program will interpret them as part
-//! of whatever follows, corrupting deserialization. There is no safe
-//! acknowledgement flag — use a migration to zero and shrink the account
-//! instead.
+//! of whatever follows, corrupting deserialization.
+//!
+//! Severity:
+//! - `Breaking` by default; the only real fix is a migration instruction
+//!   that rewrites and shrinks every existing account.
+//! - Demoted to `Additive` when the account is listed in
+//!   [`CheckContext::migrated_accounts`] — the developer has promised a
+//!   Migration<From, To> wrapper that handles the old layout.
+//! - `allow-field-removed` escape hatch for the "no active data at that
+//!   field" case (rare but legitimate when a field was never written).
 
 use std::collections::HashSet;
 
@@ -35,7 +42,7 @@ impl Rule for AccountFieldRemoved {
         &self,
         old: &ProgramSurface,
         new: &ProgramSurface,
-        _ctx: &CheckContext,
+        ctx: &CheckContext,
     ) -> Vec<Finding> {
         let mut findings = Vec::new();
         for (name, old_acc) in &old.accounts {
@@ -44,26 +51,45 @@ impl Rule for AccountFieldRemoved {
             };
             let new_names: HashSet<&str> =
                 new_acc.fields.iter().map(|f| f.name.as_str()).collect();
+            let has_migration = ctx.has_migration(name);
             for old_field in &old_acc.fields {
-                if !new_names.contains(old_field.name.as_str()) {
-                    findings.push(
-                        self.finding(Severity::Breaking)
-                            .at([
-                                format!("account:{name}"),
-                                format!("field:{}", old_field.name),
-                            ])
-                            .message(format!(
-                                "field `{}.{}` ({}) was removed; its bytes remain on-chain and will be misread by the new program",
-                                name, old_field.name, old_field.ty
-                            ))
-                            .old(format!("{}", old_field.ty))
-                            .suggestion(
-                                "Keep the field and stop using it, or write a migration \
-                                 instruction that rewrites every account with a new layout \
-                                 and shrinks via `realloc`.",
-                            ),
-                    );
+                if new_names.contains(old_field.name.as_str()) {
+                    continue;
                 }
+                let severity = if has_migration {
+                    Severity::Additive
+                } else {
+                    Severity::Breaking
+                };
+                let message = if has_migration {
+                    format!(
+                        "field `{}.{}` ({}) removed; migration declared for `{}` (not verified by ratchet)",
+                        name, old_field.name, old_field.ty, name
+                    )
+                } else {
+                    format!(
+                        "field `{}.{}` ({}) was removed; its bytes remain on-chain and will be misread by the new program",
+                        name, old_field.name, old_field.ty
+                    )
+                };
+                let mut finding = self
+                    .finding(severity)
+                    .at([
+                        format!("account:{name}"),
+                        format!("field:{}", old_field.name),
+                    ])
+                    .message(message)
+                    .old(format!("{}", old_field.ty));
+                if !has_migration {
+                    finding = finding
+                        .allow_flag("allow-field-removed")
+                        .suggestion(
+                            "Keep the field and stop using it, declare the account in \
+                             --migrated-account, or write a migration instruction that \
+                             rewrites every account with a new layout and shrinks via `realloc`.",
+                        );
+                }
+                findings.push(finding);
             }
         }
         findings
@@ -123,7 +149,9 @@ mod tests {
         assert_eq!(f.rule_id, ID);
         assert_eq!(f.severity, Severity::Breaking);
         assert_eq!(f.path, vec!["account:Vault", "field:b"]);
-        assert!(f.allow_flag.is_none());
+        // Now carries an escape hatch for the rare "the field was never
+        // actually populated" case, plus a pointer at --migrated-account.
+        assert_eq!(f.allow_flag.as_deref(), Some("allow-field-removed"));
     }
 
     #[test]
@@ -165,5 +193,34 @@ mod tests {
         assert!(AccountFieldRemoved
             .check(&old, &new, &CheckContext::new())
             .is_empty());
+    }
+
+    #[test]
+    fn migration_declaration_demotes_to_additive() {
+        let old = surface(acc(vec![
+            f("a", PrimitiveType::U64),
+            f("b", PrimitiveType::U8),
+        ]));
+        let new = surface(acc(vec![f("a", PrimitiveType::U64)]));
+        let ctx = CheckContext::new().with_migration("Vault");
+        let findings = AccountFieldRemoved.check(&old, &new, &ctx);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].severity, Severity::Additive);
+        assert!(findings[0].allow_flag.is_none());
+    }
+
+    #[test]
+    fn allow_flag_demotes_through_engine() {
+        use crate::engine::check;
+        let old = surface(acc(vec![
+            f("a", PrimitiveType::U64),
+            f("b", PrimitiveType::U8),
+        ]));
+        let new = surface(acc(vec![f("a", PrimitiveType::U64)]));
+        let rules: Vec<Box<dyn Rule>> = vec![Box::new(AccountFieldRemoved)];
+        let ctx = CheckContext::new().with_allow("allow-field-removed");
+        let report = check(&old, &new, &ctx, &rules);
+        assert_eq!(report.findings.len(), 1);
+        assert_eq!(report.findings[0].severity, Severity::Additive);
     }
 }

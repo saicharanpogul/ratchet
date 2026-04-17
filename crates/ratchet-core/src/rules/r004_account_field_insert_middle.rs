@@ -5,6 +5,13 @@
 //! point, so the program reads garbage out of every existing account.
 //! Appending at the end is a different rule (R005) with a different
 //! remediation.
+//!
+//! Severity:
+//! - `Breaking` by default.
+//! - Demoted to `Additive` when the account is listed in
+//!   [`CheckContext::migrated_accounts`] — Migration<From, To> can
+//!   handle any layout change.
+//! - `allow-field-insert` escape hatch for the flag-day case.
 
 use std::collections::HashSet;
 
@@ -34,7 +41,7 @@ impl Rule for AccountFieldInsertMiddle {
         &self,
         old: &ProgramSurface,
         new: &ProgramSurface,
-        _ctx: &CheckContext,
+        ctx: &CheckContext,
     ) -> Vec<Finding> {
         let mut findings = Vec::new();
         for (name, old_acc) in &old.accounts {
@@ -43,35 +50,56 @@ impl Rule for AccountFieldInsertMiddle {
             };
             let old_names: HashSet<&str> =
                 old_acc.fields.iter().map(|f| f.name.as_str()).collect();
+            let has_migration = ctx.has_migration(name);
 
             for (idx, new_field) in new_acc.fields.iter().enumerate() {
                 if old_names.contains(new_field.name.as_str()) {
-                    continue; // shared, not newly inserted
+                    continue;
                 }
                 let has_shared_after = new_acc
                     .fields
                     .iter()
                     .skip(idx + 1)
                     .any(|f| old_names.contains(f.name.as_str()));
-                if has_shared_after {
-                    findings.push(
-                        self.finding(Severity::Breaking)
-                            .at([
-                                format!("account:{name}"),
-                                format!("field:{}", new_field.name),
-                            ])
-                            .message(format!(
-                                "new field `{}.{}` ({}) was inserted before existing fields; \
-                                 Borsh layout shifts every subsequent offset",
-                                name, new_field.name, new_field.ty
-                            ))
-                            .new_value(format!("{}", new_field.ty))
-                            .suggestion(
-                                "Append new fields at the end of the struct, or add them in a \
-                                 migration instruction that rewrites every account.",
-                            ),
-                    );
+                if !has_shared_after {
+                    continue;
                 }
+
+                let severity = if has_migration {
+                    Severity::Additive
+                } else {
+                    Severity::Breaking
+                };
+                let message = if has_migration {
+                    format!(
+                        "new field `{}.{}` ({}) inserted before existing fields; migration declared for `{}` (not verified by ratchet)",
+                        name, new_field.name, new_field.ty, name
+                    )
+                } else {
+                    format!(
+                        "new field `{}.{}` ({}) was inserted before existing fields; \
+                         Borsh layout shifts every subsequent offset",
+                        name, new_field.name, new_field.ty
+                    )
+                };
+                let mut finding = self
+                    .finding(severity)
+                    .at([
+                        format!("account:{name}"),
+                        format!("field:{}", new_field.name),
+                    ])
+                    .message(message)
+                    .new_value(format!("{}", new_field.ty));
+                if !has_migration {
+                    finding = finding
+                        .allow_flag("allow-field-insert")
+                        .suggestion(
+                            "Append new fields at the end of the struct, declare the account \
+                             in --migrated-account, or add them in a migration instruction \
+                             that rewrites every account.",
+                        );
+                }
+                findings.push(finding);
             }
         }
         findings
@@ -172,6 +200,24 @@ mod tests {
         assert!(AccountFieldInsertMiddle
             .check(&old, &new, &CheckContext::new())
             .is_empty());
+    }
+
+    #[test]
+    fn migration_declaration_demotes_to_additive() {
+        let old = surface(acc(vec![
+            f("a", PrimitiveType::U64),
+            f("b", PrimitiveType::U8),
+        ]));
+        let new = surface(acc(vec![
+            f("a", PrimitiveType::U64),
+            f("middle", PrimitiveType::U32),
+            f("b", PrimitiveType::U8),
+        ]));
+        let ctx = CheckContext::new().with_migration("Vault");
+        let findings = AccountFieldInsertMiddle.check(&old, &new, &ctx);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].severity, Severity::Additive);
+        assert!(findings[0].allow_flag.is_none());
     }
 
     #[test]

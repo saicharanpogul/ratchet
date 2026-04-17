@@ -1,6 +1,6 @@
 //! Quasar adapter for [`ratchet`](https://github.com/saicharanpogul/ratchet).
 //!
-//! Quasar (https://quasar-lang.com) is a compile-time Solana program
+//! Quasar (<https://quasar-lang.com>) is a compile-time Solana program
 //! framework. Running `ratchet` as a *compiler pass* inside Quasar —
 //! rather than a standalone CLI invoked from CI — gives the strongest
 //! possible guarantee: an incompatible upgrade refuses to compile unless

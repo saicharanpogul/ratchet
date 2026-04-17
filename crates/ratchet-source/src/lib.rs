@@ -8,8 +8,8 @@
 //!
 //! This crate walks a directory of Rust files, finds `#[derive(Accounts)]`
 //! structs, extracts `#[account(seeds = [...])]` expressions, and emits a
-//! [`SourcePatch`] that the CLI merges into a [`ProgramSurface`] before
-//! running rules.
+//! [`SourcePatch`] that the CLI merges into a
+//! [`ratchet_core::ProgramSurface`] before running rules.
 
 pub mod parse;
 pub mod patch;

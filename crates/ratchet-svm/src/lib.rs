@@ -9,9 +9,9 @@
 //! This crate samples live program-owned accounts via
 //! `getProgramAccounts`, groups them by discriminator, and validates each
 //! sample against the corresponding account definition in the new
-//! [`ProgramSurface`]. When it finds mismatches it reports them as
-//! concrete failure categories so a developer can chase down the
-//! offending pubkeys.
+//! [`ratchet_core::ProgramSurface`]. When it finds mismatches it reports
+//! them as concrete failure categories so a developer can chase down
+//! the offending pubkeys.
 //!
 //! Real in-process SVM execution (litesvm / Surfpool) is a future
 //! enhancement; checking discriminator + byte length is enough to catch

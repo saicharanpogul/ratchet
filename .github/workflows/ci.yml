@@ -45,13 +45,13 @@ jobs:
           key: test
       - name: cargo test (default features)
         run: cargo test --workspace --all-targets
-      - name: cargo test (ratchet-svm litesvm feature)
+      - name: cargo test (solana-ratchet-svm litesvm feature)
         # Validates the feature-gated path compiles and its tests pass.
         # Kept scoped to ratchet-svm + ratchet-cli so the Solana runtime
         # crates don't slow every other job.
         run: |
-          cargo test -p ratchet-svm --features litesvm
-          cargo build -p ratchet-cli --features litesvm-deploy
+          cargo test -p solana-ratchet-svm --features litesvm
+          cargo build -p solana-ratchet-cli --features litesvm-deploy
 
   doc:
     runs-on: ubuntu-latest

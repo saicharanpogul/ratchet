@@ -19,6 +19,7 @@ pub mod r010_instruction_signer_writable_flip;
 pub mod r011_enum_variant_removed_or_inserted;
 pub mod r012_enum_variant_append;
 pub mod r013_pda_seed_change;
+pub mod r014_instruction_discriminator_change;
 
 pub use r001_account_field_reorder::AccountFieldReorder;
 pub use r002_account_field_retype::AccountFieldRetype;
@@ -33,6 +34,7 @@ pub use r010_instruction_signer_writable_flip::InstructionSignerWritableFlip;
 pub use r011_enum_variant_removed_or_inserted::EnumVariantRemovedOrInserted;
 pub use r012_enum_variant_append::EnumVariantAppend;
 pub use r013_pda_seed_change::PdaSeedChange;
+pub use r014_instruction_discriminator_change::InstructionDiscriminatorChange;
 
 /// Every rule that ships with ratchet. Order matches the `RXXX` ids.
 pub fn all() -> Vec<Box<dyn Rule>> {
@@ -50,5 +52,6 @@ pub fn all() -> Vec<Box<dyn Rule>> {
         Box::new(EnumVariantRemovedOrInserted),
         Box::new(EnumVariantAppend),
         Box::new(PdaSeedChange),
+        Box::new(InstructionDiscriminatorChange),
     ]
 }

@@ -1,5 +1,5 @@
 [package]
-name = "ratchet-core"
+name = "solana-ratchet-core"
 description = "Core IR and rule engine for ratchet, an upgrade-safety checker for Solana programs"
 version.workspace = true
 edition.workspace = true

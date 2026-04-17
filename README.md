@@ -34,10 +34,19 @@ Coming next: Squads proposal diff view, literal LiteSVM program deploy, Quasar c
 ## Install
 
 ```sh
+cargo install solana-ratchet-cli
+```
+
+The binary is called `ratchet`. Local install from a checkout:
+
+```sh
 cargo install --path crates/ratchet-cli
 ```
 
-(published crate coming once the rule list stabilises)
+Library crates publish under the `solana-ratchet-*` prefix
+(`solana-ratchet-core`, `solana-ratchet-anchor`, `solana-ratchet-lock`,
+`solana-ratchet-source`, `solana-ratchet-svm`, `solana-ratchet-squads`,
+`solana-ratchet-quasar`).
 
 ## Usage
 
@@ -111,8 +120,7 @@ Full Borsh decode pulls the concrete `program_id` and `buffer` pubkeys straight 
 ### LiteSVM deploy smoke test (optional)
 
 ```sh
-# Rebuild with the feature to enable it
-cargo install --path crates/ratchet-cli --features litesvm-deploy
+cargo install solana-ratchet-cli --features litesvm-deploy
 
 ratchet replay --program <PID> --new target/idl/vault.json \
   --so target/deploy/vault.so --deploy

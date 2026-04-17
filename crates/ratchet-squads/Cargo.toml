@@ -1,5 +1,5 @@
 [package]
-name = "ratchet-squads"
+name = "solana-ratchet-squads"
 description = "Squads V4 proposal decoder for ratchet: summarises what a pending multisig upgrade would do"
 version.workspace = true
 edition.workspace = true
@@ -13,7 +13,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-ratchet-anchor = { path = "../ratchet-anchor", version = "0.0.1" }
+ratchet-anchor = { package = "solana-ratchet-anchor", path = "../ratchet-anchor", version = "0.1.0" }
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -1,5 +1,5 @@
 [package]
-name = "ratchet-cli"
+name = "solana-ratchet-cli"
 description = "CLI for the ratchet upgrade-safety checker"
 version.workspace = true
 edition.workspace = true
@@ -17,12 +17,12 @@ name = "ratchet"
 path = "src/main.rs"
 
 [dependencies]
-ratchet-core = { path = "../ratchet-core", version = "0.0.1" }
-ratchet-anchor = { path = "../ratchet-anchor", version = "0.0.1" }
-ratchet-lock = { path = "../ratchet-lock", version = "0.0.1" }
-ratchet-source = { path = "../ratchet-source", version = "0.0.1" }
-ratchet-svm = { path = "../ratchet-svm", version = "0.0.1" }
-ratchet-squads = { path = "../ratchet-squads", version = "0.0.1" }
+ratchet-core = { package = "solana-ratchet-core", path = "../ratchet-core", version = "0.1.0" }
+ratchet-anchor = { package = "solana-ratchet-anchor", path = "../ratchet-anchor", version = "0.1.0" }
+ratchet-lock = { package = "solana-ratchet-lock", path = "../ratchet-lock", version = "0.1.0" }
+ratchet-source = { package = "solana-ratchet-source", path = "../ratchet-source", version = "0.1.0" }
+ratchet-svm = { package = "solana-ratchet-svm", path = "../ratchet-svm", version = "0.1.0" }
+ratchet-squads = { package = "solana-ratchet-squads", path = "../ratchet-squads", version = "0.1.0" }
 anyhow.workspace = true
 clap.workspace = true
 serde.workspace = true
@@ -30,5 +30,5 @@ serde_json.workspace = true
 
 [features]
 default = []
-# Forwards to ratchet-svm/litesvm. Enables `ratchet replay --deploy`.
+# Forwards to solana-ratchet-svm/litesvm. Enables `ratchet replay --deploy`.
 litesvm-deploy = ["ratchet-svm/litesvm"]

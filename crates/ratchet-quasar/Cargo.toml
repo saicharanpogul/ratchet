@@ -1,5 +1,5 @@
 [package]
-name = "ratchet-quasar"
+name = "solana-ratchet-quasar"
 description = "Quasar adapter for ratchet: run the rule engine as a compile-time pass inside the Quasar compiler"
 version.workspace = true
 edition.workspace = true
@@ -13,7 +13,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-ratchet-core = { path = "../ratchet-core", version = "0.0.1" }
+ratchet-core = { package = "solana-ratchet-core", path = "../ratchet-core", version = "0.1.0" }
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true

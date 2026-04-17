@@ -77,7 +77,7 @@ runs:
         cargo install --quiet \
           --git https://github.com/saicharanpogul/ratchet \
           --branch "${{ inputs.version }}" \
-          ratchet-cli
+          solana-ratchet-cli
 
     - name: Run ratchet check-upgrade
       id: check

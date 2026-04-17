@@ -48,6 +48,9 @@ pub struct ProgramSurface {
     /// Program errors keyed by error code.
     #[serde(default)]
     pub errors: BTreeMap<u32, ErrorDef>,
+    /// Events emitted by the program, keyed by event name.
+    #[serde(default)]
+    pub events: BTreeMap<String, EventDef>,
 }
 
 /// A struct that the program stores on-chain (the `#[account]` shape).
@@ -175,6 +178,16 @@ pub struct ErrorDef {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+}
+
+/// An Anchor `#[event]`. The name identifies the event type; the
+/// discriminator is the 8-byte selector logged in front of each emitted
+/// event's Borsh payload (`sha256("event:<Name>")[..8]` by default).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EventDef {
+    pub name: String,
+    #[serde(with = "discriminator_hex")]
+    pub discriminator: Discriminator,
 }
 
 /// Primitive types recognized by the IR.

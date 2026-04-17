@@ -14,7 +14,10 @@ pub use decode::{decode_idl_account, IDL_PREFIX_LEN};
 pub use fetch::{fetch_account_data, fetch_idl_account, fetch_idl_for_program, Cluster};
 pub use idl::AnchorIdl;
 pub use load::{load_idl_from_file, load_idl_from_workspace};
-pub use normalize::{default_account_discriminator, default_instruction_discriminator, normalize};
+pub use normalize::{
+    default_account_discriminator, default_event_discriminator, default_instruction_discriminator,
+    normalize,
+};
 pub use pda::{
     anchor_idl_address, create_with_seed, decode_pubkey, encode_pubkey, find_program_address,
     is_on_curve, ANCHOR_IDL_SEED,

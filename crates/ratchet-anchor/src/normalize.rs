@@ -16,7 +16,8 @@ use std::collections::BTreeMap;
 use anyhow::{anyhow, bail, Context, Result};
 use ratchet_core::{
     AccountDef, AccountInput, ArgDef, Discriminator, EnumVariant, EnumVariantFields, ErrorDef,
-    FieldDef, InstructionDef, PdaSpec, PrimitiveType, ProgramSurface, Seed, TypeDef, TypeRef,
+    EventDef, FieldDef, InstructionDef, PdaSpec, PrimitiveType, ProgramSurface, Seed, TypeDef,
+    TypeRef,
 };
 use sha2::{Digest, Sha256};
 
@@ -126,7 +127,30 @@ pub fn normalize(idl: &AnchorIdl) -> Result<ProgramSurface> {
         );
     }
 
+    // Events. Discriminator defaults to sha256("event:<Name>")[..8] when
+    // the IDL omits it (pre-0.30 IDLs strip the field).
+    for event in &idl.events {
+        let discriminator = event
+            .discriminator
+            .unwrap_or_else(|| default_event_discriminator(&event.name));
+        surface.events.insert(
+            event.name.clone(),
+            EventDef {
+                name: event.name.clone(),
+                discriminator,
+            },
+        );
+    }
+
     Ok(surface)
+}
+
+/// Default Anchor event discriminator: `sha256("event:<Name>")[..8]`.
+pub fn default_event_discriminator(name: &str) -> Discriminator {
+    let digest = Sha256::digest(format!("event:{name}").as_bytes());
+    let mut out = [0u8; 8];
+    out.copy_from_slice(&digest[..8]);
+    out
 }
 
 fn parse_fields(fields: Option<&AnchorIdlStructFields>) -> Result<Vec<FieldDef>> {
@@ -555,6 +579,42 @@ mod tests {
             [d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7]]
         };
         assert_eq!(default_instruction_discriminator("initialize"), expected);
+    }
+
+    #[test]
+    fn events_are_normalized_with_defaults() {
+        let idl: AnchorIdl = serde_json::from_str(
+            r#"{
+                "metadata": { "name": "p" },
+                "instructions": [],
+                "accounts": [],
+                "types": [],
+                "events": [
+                    { "name": "Deposited", "discriminator": [1,2,3,4,5,6,7,8] },
+                    { "name": "Withdrawn" }
+                ]
+            }"#,
+        )
+        .unwrap();
+        let surface = normalize(&idl).unwrap();
+        assert_eq!(surface.events.len(), 2);
+        assert_eq!(
+            surface.events["Deposited"].discriminator,
+            [1, 2, 3, 4, 5, 6, 7, 8]
+        );
+        assert_eq!(
+            surface.events["Withdrawn"].discriminator,
+            default_event_discriminator("Withdrawn")
+        );
+    }
+
+    #[test]
+    fn default_event_discriminator_uses_event_prefix() {
+        let expected: [u8; 8] = {
+            let d = sha2::Sha256::digest(b"event:Deposited");
+            [d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7]]
+        };
+        assert_eq!(default_event_discriminator("Deposited"), expected);
     }
 
     #[test]

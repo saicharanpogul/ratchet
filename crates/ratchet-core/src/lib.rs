@@ -16,5 +16,6 @@ pub use engine::{check, default_rules};
 pub use rule::{CheckContext, Rule};
 pub use surface::{
     AccountDef, AccountInput, ArgDef, Discriminator, EnumVariant, EnumVariantFields, ErrorDef,
-    FieldDef, InstructionDef, PdaSpec, PrimitiveType, ProgramSurface, Seed, TypeDef, TypeRef,
+    EventDef, FieldDef, InstructionDef, PdaSpec, PrimitiveType, ProgramSurface, Seed, TypeDef,
+    TypeRef,
 };

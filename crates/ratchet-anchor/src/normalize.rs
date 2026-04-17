@@ -136,7 +136,7 @@ fn parse_fields(fields: Option<&AnchorIdlStructFields>) -> Result<Vec<FieldDef>>
     match fields {
         AnchorIdlStructFields::Named(named) => named
             .iter()
-            .map(|f| parse_named_field(f))
+            .map(parse_named_field)
             .collect::<Result<Vec<_>>>(),
         AnchorIdlStructFields::Tuple(types) => types
             .iter()

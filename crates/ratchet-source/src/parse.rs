@@ -105,12 +105,17 @@ fn is_build_artifact(path: &Path) -> bool {
     })
 }
 
+/// One field of an `#[derive(Accounts)]` struct, as we see it during
+/// parsing: the field's name, plus — when the field carries a
+/// `#[account(seeds = [...])]` attribute — the parsed seed expressions.
+type AccountsStructField = (String, Option<Vec<Expr>>);
+
 #[derive(Default)]
 struct FileVisitor {
     /// `ix_name_of[AccountsStructName] = instruction_name`
     ix_name_of: HashMap<String, String>,
     /// `accounts_of[AccountsStructName] = [(field_name, seeds_expr)]`
-    accounts_of: HashMap<String, Vec<(String, Option<Vec<Expr>>)>>,
+    accounts_of: HashMap<String, Vec<AccountsStructField>>,
     inside_program_mod: bool,
 }
 

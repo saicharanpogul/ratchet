@@ -48,8 +48,7 @@ impl Rule for AccountFieldInsertMiddle {
             let Some(new_acc) = new.accounts.get(name) else {
                 continue;
             };
-            let old_names: HashSet<&str> =
-                old_acc.fields.iter().map(|f| f.name.as_str()).collect();
+            let old_names: HashSet<&str> = old_acc.fields.iter().map(|f| f.name.as_str()).collect();
             let has_migration = ctx.has_migration(name);
 
             for (idx, new_field) in new_acc.fields.iter().enumerate() {
@@ -91,13 +90,11 @@ impl Rule for AccountFieldInsertMiddle {
                     .message(message)
                     .new_value(format!("{}", new_field.ty));
                 if !has_migration {
-                    finding = finding
-                        .allow_flag("allow-field-insert")
-                        .suggestion(
-                            "Append new fields at the end of the struct, declare the account \
+                    finding = finding.allow_flag("allow-field-insert").suggestion(
+                        "Append new fields at the end of the struct, declare the account \
                              in --migrated-account, or add them in a migration instruction \
                              that rewrites every account.",
-                        );
+                    );
                 }
                 findings.push(finding);
             }
@@ -140,7 +137,10 @@ mod tests {
 
     #[test]
     fn identical_surface_no_findings() {
-        let s = surface(acc(vec![f("a", PrimitiveType::U64), f("b", PrimitiveType::U8)]));
+        let s = surface(acc(vec![
+            f("a", PrimitiveType::U64),
+            f("b", PrimitiveType::U8),
+        ]));
         assert!(AccountFieldInsertMiddle
             .check(&s, &s, &CheckContext::new())
             .is_empty());

@@ -46,8 +46,7 @@ impl Rule for AccountFieldAppend {
             let Some(new_acc) = new.accounts.get(name) else {
                 continue;
             };
-            let old_names: HashSet<&str> =
-                old_acc.fields.iter().map(|f| f.name.as_str()).collect();
+            let old_names: HashSet<&str> = old_acc.fields.iter().map(|f| f.name.as_str()).collect();
 
             for (idx, new_field) in new_acc.fields.iter().enumerate() {
                 if old_names.contains(new_field.name.as_str()) {
@@ -152,7 +151,10 @@ mod tests {
         let findings = AccountFieldAppend.check(&old, &new, &CheckContext::new());
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].severity, Severity::Unsafe);
-        assert_eq!(findings[0].allow_flag.as_deref(), Some("allow-field-append"));
+        assert_eq!(
+            findings[0].allow_flag.as_deref(),
+            Some("allow-field-append")
+        );
     }
 
     #[test]

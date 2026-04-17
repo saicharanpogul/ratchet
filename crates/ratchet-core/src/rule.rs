@@ -15,12 +15,8 @@ pub trait Rule: Send + Sync {
     /// One-line description used in `--list-rules` output.
     fn description(&self) -> &'static str;
     /// Compute findings by comparing `old` to `new`.
-    fn check(
-        &self,
-        old: &ProgramSurface,
-        new: &ProgramSurface,
-        ctx: &CheckContext,
-    ) -> Vec<Finding>;
+    fn check(&self, old: &ProgramSurface, new: &ProgramSurface, ctx: &CheckContext)
+        -> Vec<Finding>;
 
     /// Convenience helper that seeds a [`Finding`] with this rule's id and
     /// name. Rule implementations typically call `self.finding(Severity::...)`

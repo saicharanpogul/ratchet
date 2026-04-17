@@ -279,7 +279,10 @@ mod tests {
 
         let ix = &idl.instructions[0];
         assert_eq!(ix.name, "deposit");
-        assert_eq!(ix.discriminator, Some([242, 35, 198, 137, 82, 225, 242, 182]));
+        assert_eq!(
+            ix.discriminator,
+            Some([242, 35, 198, 137, 82, 225, 242, 182])
+        );
         assert_eq!(ix.accounts.len(), 3);
         assert_eq!(ix.args.len(), 1);
 

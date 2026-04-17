@@ -220,9 +220,7 @@ fn parse_primitive(s: &str) -> Result<TypeRef> {
             // We return `Unrecognized` rather than `Defined` so the
             //     diff engine surfaces the raw string explicitly and
             //     validate.rs knows not to assume a size.
-            return Ok(TypeRef::Unrecognized {
-                raw: other.into(),
-            });
+            return Ok(TypeRef::Unrecognized { raw: other.into() });
         }
     };
     Ok(TypeRef::primitive(prim))
@@ -248,9 +246,7 @@ fn parse_complex(v: &serde_json::Value) -> Result<TypeRef> {
             bail!("array type expects 2 elements, got {}", arr.len());
         }
         let element = parse_value_as_type_ref(&arr[0])?;
-        let len = arr[1]
-            .as_u64()
-            .context("array length must be a number")?;
+        let len = arr[1].as_u64().context("array length must be a number")?;
         return Ok(TypeRef::Array {
             ty: Box::new(element),
             len: len as usize,

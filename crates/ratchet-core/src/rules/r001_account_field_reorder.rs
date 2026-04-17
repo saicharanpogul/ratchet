@@ -45,10 +45,8 @@ impl Rule for AccountFieldReorder {
                 continue;
             };
 
-            let old_names: HashSet<&str> =
-                old_acc.fields.iter().map(|f| f.name.as_str()).collect();
-            let new_names: HashSet<&str> =
-                new_acc.fields.iter().map(|f| f.name.as_str()).collect();
+            let old_names: HashSet<&str> = old_acc.fields.iter().map(|f| f.name.as_str()).collect();
+            let new_names: HashSet<&str> = new_acc.fields.iter().map(|f| f.name.as_str()).collect();
             let common: HashSet<&str> = old_names.intersection(&new_names).copied().collect();
 
             if common.len() < 2 {
@@ -129,7 +127,10 @@ mod tests {
     fn identical_fields_produce_no_findings() {
         let old = surface_with(account(
             "Vault",
-            vec![f("owner", PrimitiveType::Pubkey), f("balance", PrimitiveType::U64)],
+            vec![
+                f("owner", PrimitiveType::Pubkey),
+                f("balance", PrimitiveType::U64),
+            ],
         ));
         let findings = AccountFieldReorder.check(&old, &old, &CheckContext::new());
         assert!(findings.is_empty());
@@ -139,11 +140,17 @@ mod tests {
     fn reordering_shared_fields_is_breaking() {
         let old = surface_with(account(
             "Vault",
-            vec![f("owner", PrimitiveType::Pubkey), f("balance", PrimitiveType::U64)],
+            vec![
+                f("owner", PrimitiveType::Pubkey),
+                f("balance", PrimitiveType::U64),
+            ],
         ));
         let new = surface_with(account(
             "Vault",
-            vec![f("balance", PrimitiveType::U64), f("owner", PrimitiveType::Pubkey)],
+            vec![
+                f("balance", PrimitiveType::U64),
+                f("owner", PrimitiveType::Pubkey),
+            ],
         ));
         let findings = AccountFieldReorder.check(&old, &new, &CheckContext::new());
         assert_eq!(findings.len(), 1);
@@ -161,7 +168,10 @@ mod tests {
         // other rules.
         let old = surface_with(account(
             "Vault",
-            vec![f("owner", PrimitiveType::Pubkey), f("balance", PrimitiveType::U64)],
+            vec![
+                f("owner", PrimitiveType::Pubkey),
+                f("balance", PrimitiveType::U64),
+            ],
         ));
         let new = surface_with(account(
             "Vault",
@@ -187,7 +197,10 @@ mod tests {
         ));
         let new = surface_with(account(
             "Vault",
-            vec![f("owner", PrimitiveType::Pubkey), f("balance", PrimitiveType::U64)],
+            vec![
+                f("owner", PrimitiveType::Pubkey),
+                f("balance", PrimitiveType::U64),
+            ],
         ));
         let findings = AccountFieldReorder.check(&old, &new, &CheckContext::new());
         assert!(findings.is_empty());
@@ -209,11 +222,17 @@ mod tests {
         // If only one field is shared there is nothing to reorder.
         let old = surface_with(account(
             "Vault",
-            vec![f("owner", PrimitiveType::Pubkey), f("balance", PrimitiveType::U64)],
+            vec![
+                f("owner", PrimitiveType::Pubkey),
+                f("balance", PrimitiveType::U64),
+            ],
         ));
         let new = surface_with(account(
             "Vault",
-            vec![f("owner", PrimitiveType::Pubkey), f("nonce", PrimitiveType::U8)],
+            vec![
+                f("owner", PrimitiveType::Pubkey),
+                f("nonce", PrimitiveType::U8),
+            ],
         ));
         let findings = AccountFieldReorder.check(&old, &new, &CheckContext::new());
         assert!(findings.is_empty());

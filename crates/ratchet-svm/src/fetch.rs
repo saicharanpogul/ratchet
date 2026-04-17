@@ -127,7 +127,10 @@ mod tests {
         }"#;
         let accs = parse_program_accounts_json(raw).unwrap();
         assert_eq!(accs.len(), 1);
-        assert_eq!(accs[0].pubkey, "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
+        assert_eq!(
+            accs[0].pubkey,
+            "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+        );
         assert_eq!(accs[0].data, vec![1, 2, 3, 4]);
     }
 }

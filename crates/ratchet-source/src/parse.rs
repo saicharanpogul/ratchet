@@ -24,8 +24,8 @@ use anyhow::{Context, Result};
 use ratchet_core::PdaSpec;
 use syn::visit::Visit;
 use syn::{
-    Attribute, Expr, ExprLit, ExprPath, ImplItem, ItemFn, ItemImpl, ItemMod, ItemStruct,
-    Lit, Meta, Pat,
+    Attribute, Expr, ExprLit, ExprPath, ImplItem, ItemFn, ItemImpl, ItemMod, ItemStruct, Lit, Meta,
+    Pat,
 };
 use walkdir::WalkDir;
 
@@ -46,8 +46,7 @@ pub struct SourceScan {
 pub fn parse_file(path: &Path, scan: &mut SourceScan) -> Result<()> {
     let content = fs::read_to_string(path)
         .with_context(|| format!("reading source file {}", path.display()))?;
-    let file = syn::parse_file(&content)
-        .with_context(|| format!("parsing {}", path.display()))?;
+    let file = syn::parse_file(&content).with_context(|| format!("parsing {}", path.display()))?;
 
     let mut v = FileVisitor::default();
     v.visit_file(&file);
@@ -92,8 +91,7 @@ pub fn parse_dir(root: &Path) -> Result<SourceScan> {
         if path.extension().and_then(|e| e.to_str()) != Some("rs") {
             continue;
         }
-        parse_file(path, &mut scan)
-            .with_context(|| format!("scanning {}", path.display()))?;
+        parse_file(path, &mut scan).with_context(|| format!("scanning {}", path.display()))?;
     }
     Ok(scan)
 }
@@ -257,9 +255,7 @@ fn extract_seeds_from_attrs(attrs: &[Attribute]) -> Option<Vec<Expr>> {
             continue;
         };
         let parsed = list
-            .parse_args_with(
-                syn::punctuated::Punctuated::<Expr, syn::Token![,]>::parse_terminated,
-            )
+            .parse_args_with(syn::punctuated::Punctuated::<Expr, syn::Token![,]>::parse_terminated)
             .ok()?;
         for item in parsed {
             if let Some(seeds) = expr_as_seeds_assign(&item) {

@@ -143,11 +143,7 @@ fn summarise_structured(vt: &VaultTransaction, account_size: usize) -> VaultTran
 
     let mut kind = ProposalKind::Other;
     for ix in &vt.message.instructions {
-        let program_key = match vt
-            .message
-            .account_keys
-            .get(ix.program_id_index as usize)
-        {
+        let program_key = match vt.message.account_keys.get(ix.program_id_index as usize) {
             Some(k) => k,
             None => continue,
         };
@@ -284,7 +280,9 @@ mod tests {
     #[test]
     fn loader_constant_decodes_to_32_bytes() {
         assert_eq!(
-            decode_pubkey(BPF_LOADER_UPGRADEABLE_PROGRAM_ID).unwrap().len(),
+            decode_pubkey(BPF_LOADER_UPGRADEABLE_PROGRAM_ID)
+                .unwrap()
+                .len(),
             32
         );
     }
@@ -293,9 +291,7 @@ mod tests {
     fn scan_pubkeys_finds_embedded_pubkey() {
         let blob = synth_upgrade_blob();
         let keys = scan_pubkeys(&blob, 16);
-        assert!(keys
-            .iter()
-            .any(|k| k == BPF_LOADER_UPGRADEABLE_PROGRAM_ID));
+        assert!(keys.iter().any(|k| k == BPF_LOADER_UPGRADEABLE_PROGRAM_ID));
     }
 
     /// Build a real Borsh-formatted VaultTransaction whose inner
@@ -333,8 +329,16 @@ mod tests {
         // instruction's 7 accounts (program_data, program, buffer, spill,
         // rent, clock, authority) in order. SmallVec<u8, Pubkey> — 1-byte
         // prefix, not Borsh u32.
-        let keys: Vec<&[u8; 32]> =
-            vec![&program_data, &program, &buf_key, &spill, &rent, &clock, &authority, &loader];
+        let keys: Vec<&[u8; 32]> = vec![
+            &program_data,
+            &program,
+            &buf_key,
+            &spill,
+            &rent,
+            &clock,
+            &authority,
+            &loader,
+        ];
         blob.push(keys.len() as u8);
         for k in &keys {
             blob.extend_from_slice(*k);

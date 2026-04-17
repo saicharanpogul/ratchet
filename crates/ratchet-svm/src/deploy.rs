@@ -85,7 +85,8 @@ mod tests {
 
     #[test]
     fn non_sbf_bytes_rejected_before_svm() {
-        let err = verify_deploy("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", &[0u8; 16]).unwrap_err();
+        let err =
+            verify_deploy("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", &[0u8; 16]).unwrap_err();
         assert!(format!("{err:#}").contains("ELF"));
     }
 }

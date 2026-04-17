@@ -55,10 +55,7 @@ pub fn parse_seed_expr(expr: &Expr, known_accounts: &[String]) -> SeedExpr {
     // through method-call chains and try to find the base identifier.
     if let Some((root, field)) = walk_method_chain(expr) {
         if known_accounts.iter().any(|a| a == &root) {
-            return SeedExpr::Account {
-                name: root,
-                field,
-            };
+            return SeedExpr::Account { name: root, field };
         } else if field.is_none() {
             return SeedExpr::Arg(root);
         }
@@ -134,13 +131,19 @@ mod tests {
     #[test]
     fn byte_string_literal_becomes_const() {
         let e: Expr = parse_quote!(b"vault");
-        assert_eq!(parse_seed_expr(&e, &accounts()), SeedExpr::Const(b"vault".to_vec()));
+        assert_eq!(
+            parse_seed_expr(&e, &accounts()),
+            SeedExpr::Const(b"vault".to_vec())
+        );
     }
 
     #[test]
     fn borrowed_byte_string_still_const() {
         let e: Expr = parse_quote!(&b"vault");
-        assert_eq!(parse_seed_expr(&e, &accounts()), SeedExpr::Const(b"vault".to_vec()));
+        assert_eq!(
+            parse_seed_expr(&e, &accounts()),
+            SeedExpr::Const(b"vault".to_vec())
+        );
     }
 
     #[test]
@@ -182,7 +185,10 @@ mod tests {
     #[test]
     fn arg_without_field_becomes_arg() {
         let e: Expr = parse_quote!(amount.to_le_bytes());
-        assert_eq!(parse_seed_expr(&e, &accounts()), SeedExpr::Arg("amount".into()));
+        assert_eq!(
+            parse_seed_expr(&e, &accounts()),
+            SeedExpr::Arg("amount".into())
+        );
     }
 
     #[test]
@@ -205,5 +211,4 @@ mod tests {
         .into_seed();
         assert!(matches!(s, Seed::Account { .. }));
     }
-
 }

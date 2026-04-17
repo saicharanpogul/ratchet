@@ -106,8 +106,8 @@ impl Lockfile {
 
     pub fn read(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
-        let content = fs::read_to_string(path)
-            .with_context(|| format!("reading {}", path.display()))?;
+        let content =
+            fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
         Self::from_json(&content)
     }
 }
@@ -148,7 +148,10 @@ mod tests {
         let back = Lockfile::from_json(&json).unwrap();
         assert_eq!(back.version, CURRENT_VERSION);
         assert_eq!(back.surface.name, "vault");
-        assert_eq!(back.surface.accounts["Vault"].discriminator, [1, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(
+            back.surface.accounts["Vault"].discriminator,
+            [1, 2, 3, 4, 5, 6, 7, 8]
+        );
     }
 
     #[test]

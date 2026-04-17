@@ -34,7 +34,10 @@ pub fn decode_pubkey(b58: &str) -> Result<[u8; 32]> {
         .into_vec()
         .with_context(|| format!("decoding base58 pubkey `{b58}`"))?;
     if bytes.len() != 32 {
-        bail!("pubkey must be 32 bytes after base58 decode, got {}", bytes.len());
+        bail!(
+            "pubkey must be 32 bytes after base58 decode, got {}",
+            bytes.len()
+        );
     }
     let mut out = [0u8; 32];
     out.copy_from_slice(&bytes);

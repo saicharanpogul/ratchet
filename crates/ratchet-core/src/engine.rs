@@ -52,12 +52,7 @@ mod tests {
         fn description(&self) -> &'static str {
             "test"
         }
-        fn check(
-            &self,
-            _: &ProgramSurface,
-            _: &ProgramSurface,
-            _: &CheckContext,
-        ) -> Vec<Finding> {
+        fn check(&self, _: &ProgramSurface, _: &ProgramSurface, _: &CheckContext) -> Vec<Finding> {
             vec![self
                 .finding(Severity::Breaking)
                 .message("boom")

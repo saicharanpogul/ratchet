@@ -151,30 +151,29 @@ fn pdas_equal(a: &PdaSpec, b: &PdaSpec) -> bool {
     if a.seeds.len() != b.seeds.len() {
         return false;
     }
-    a.seeds.iter().zip(b.seeds.iter()).all(|(x, y)| match (x, y) {
-        (Seed::Const { bytes: b1 }, Seed::Const { bytes: b2 }) => b1 == b2,
-        (Seed::Arg { name: n1 }, Seed::Arg { name: n2 }) => n1 == n2,
-        (
-            Seed::Account {
-                name: n1,
-                field: f1,
-            },
-            Seed::Account {
-                name: n2,
-                field: f2,
-            },
-        ) => n1 == n2 && f1 == f2,
-        (Seed::Unknown { raw: r1 }, Seed::Unknown { raw: r2 }) => r1 == r2,
-        _ => false,
-    })
+    a.seeds
+        .iter()
+        .zip(b.seeds.iter())
+        .all(|(x, y)| match (x, y) {
+            (Seed::Const { bytes: b1 }, Seed::Const { bytes: b2 }) => b1 == b2,
+            (Seed::Arg { name: n1 }, Seed::Arg { name: n2 }) => n1 == n2,
+            (
+                Seed::Account {
+                    name: n1,
+                    field: f1,
+                },
+                Seed::Account {
+                    name: n2,
+                    field: f2,
+                },
+            ) => n1 == n2 && f1 == f2,
+            (Seed::Unknown { raw: r1 }, Seed::Unknown { raw: r2 }) => r1 == r2,
+            _ => false,
+        })
 }
 
 fn render_seeds(seeds: &[Seed]) -> String {
-    seeds
-        .iter()
-        .map(render_seed)
-        .collect::<Vec<_>>()
-        .join(", ")
+    seeds.iter().map(render_seed).collect::<Vec<_>>().join(", ")
 }
 
 fn render_seeds_and_program(pda: &PdaSpec) -> String {

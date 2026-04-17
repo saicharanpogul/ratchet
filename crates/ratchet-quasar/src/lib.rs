@@ -34,11 +34,7 @@ use serde::{Deserialize, Serialize};
 /// This is the function a Quasar compiler pass invokes after it has
 /// built [`ProgramSurface`] values for the old (baseline) and new
 /// (current) versions of the program.
-pub fn check_pair(
-    old: &ProgramSurface,
-    new: &ProgramSurface,
-    ctx: &CheckContext,
-) -> Report {
+pub fn check_pair(old: &ProgramSurface, new: &ProgramSurface, ctx: &CheckContext) -> Report {
     let rules: Vec<Box<dyn Rule>> = ratchet_core::default_rules();
     check(old, new, ctx, &rules)
 }
@@ -70,7 +66,12 @@ impl SurfaceBuilder {
         self
     }
 
-    pub fn account(mut self, name: impl Into<String>, disc: Discriminator, fields: Vec<FieldDef>) -> Self {
+    pub fn account(
+        mut self,
+        name: impl Into<String>,
+        disc: Discriminator,
+        fields: Vec<FieldDef>,
+    ) -> Self {
         let name = name.into();
         self.surface.accounts.insert(
             name.clone(),
@@ -212,14 +213,20 @@ mod tests {
             .account(
                 "Vault",
                 [1; 8],
-                vec![field("a", PrimitiveType::U64), field("b", PrimitiveType::U8)],
+                vec![
+                    field("a", PrimitiveType::U64),
+                    field("b", PrimitiveType::U8),
+                ],
             )
             .build();
         let new = SurfaceBuilder::new("vault")
             .account(
                 "Vault",
                 [1; 8],
-                vec![field("b", PrimitiveType::U8), field("a", PrimitiveType::U64)],
+                vec![
+                    field("b", PrimitiveType::U8),
+                    field("a", PrimitiveType::U64),
+                ],
             )
             .build();
         let report = check_pair(&old, &new, &CheckContext::new());

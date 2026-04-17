@@ -30,8 +30,7 @@ fn identical_idls_are_safe() {
 #[test]
 fn breaking_upgrade_fires_multiple_rules() {
     let old = normalize(&load_idl_from_file(fixture("vault_v1.json")).unwrap()).unwrap();
-    let new =
-        normalize(&load_idl_from_file(fixture("vault_v2_breaking.json")).unwrap()).unwrap();
+    let new = normalize(&load_idl_from_file(fixture("vault_v2_breaking.json")).unwrap()).unwrap();
     let report = check(&old, &new, &CheckContext::new(), &default_rules());
 
     assert_eq!(report.max_severity(), Some(Severity::Breaking));
@@ -57,8 +56,7 @@ fn breaking_upgrade_fires_multiple_rules() {
 #[test]
 fn additive_upgrade_is_safe() {
     let old = normalize(&load_idl_from_file(fixture("vault_v1.json")).unwrap()).unwrap();
-    let new =
-        normalize(&load_idl_from_file(fixture("vault_v2_additive.json")).unwrap()).unwrap();
+    let new = normalize(&load_idl_from_file(fixture("vault_v2_additive.json")).unwrap()).unwrap();
     let report = check(&old, &new, &CheckContext::new(), &default_rules());
 
     // Only additive findings (R012 for the enum tail append). No Breaking
@@ -66,10 +64,7 @@ fn additive_upgrade_is_safe() {
     // variant are both safe changes.
     assert_eq!(report.exit_code(), 0);
     assert!(
-        matches!(
-            report.max_severity(),
-            None | Some(Severity::Additive)
-        ),
+        matches!(report.max_severity(), None | Some(Severity::Additive)),
         "expected safe verdict, got {:?}",
         report.max_severity()
     );
@@ -92,7 +87,12 @@ fn lockfile_round_trip_as_baseline() {
 
     let reread = Lockfile::from_json(&json).unwrap();
     let new = normalize(&load_idl_from_file(fixture("vault_v2_breaking.json")).unwrap()).unwrap();
-    let report = check(&reread.surface, &new, &CheckContext::new(), &default_rules());
+    let report = check(
+        &reread.surface,
+        &new,
+        &CheckContext::new(),
+        &default_rules(),
+    );
 
     assert_eq!(report.exit_code(), 1);
     assert_eq!(report.max_severity(), Some(Severity::Breaking));
@@ -102,8 +102,7 @@ fn lockfile_round_trip_as_baseline() {
 #[test]
 fn migration_declaration_demotes_field_append() {
     let old = normalize(&load_idl_from_file(fixture("vault_v1.json")).unwrap()).unwrap();
-    let new =
-        normalize(&load_idl_from_file(fixture("vault_v2_breaking.json")).unwrap()).unwrap();
+    let new = normalize(&load_idl_from_file(fixture("vault_v2_breaking.json")).unwrap()).unwrap();
     let ctx = CheckContext::new().with_migration("Vault");
     let report = check(&old, &new, &ctx, &default_rules());
 

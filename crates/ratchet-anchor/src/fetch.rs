@@ -111,9 +111,7 @@ fn rpc_get_account_data(rpc_url: &str, pubkey: &str) -> Result<Vec<u8>> {
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow::anyhow!("RPC response missing account data"))?;
 
-    BASE64
-        .decode(data)
-        .context("base64-decoding account data")
+    BASE64.decode(data).context("base64-decoding account data")
 }
 
 #[cfg(test)]
@@ -134,6 +132,9 @@ mod tests {
 
     #[test]
     fn mainnet_url() {
-        assert_eq!(Cluster::Mainnet.url(), "https://api.mainnet-beta.solana.com");
+        assert_eq!(
+            Cluster::Mainnet.url(),
+            "https://api.mainnet-beta.solana.com"
+        );
     }
 }

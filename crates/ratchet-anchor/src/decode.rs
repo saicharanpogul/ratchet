@@ -94,7 +94,8 @@ mod tests {
 
     #[test]
     fn rejects_truncated_payload() {
-        let mut blob = synth_account(r#"{"metadata":{"name":"x"},"instructions":[],"accounts":[]}"#);
+        let mut blob =
+            synth_account(r#"{"metadata":{"name":"x"},"instructions":[],"accounts":[]}"#);
         // Chop off some compressed bytes while leaving the declared length intact.
         blob.truncate(blob.len() - 4);
         let err = decode_idl_account(&blob).unwrap_err();

@@ -309,10 +309,7 @@ mod tests {
         );
         let applied = patch.apply_to(&mut s);
         assert_eq!(applied, 1);
-        let merged = s.instructions["deposit"].accounts[0]
-            .pda
-            .as_ref()
-            .unwrap();
+        let merged = s.instructions["deposit"].accounts[0].pda.as_ref().unwrap();
         match &merged.seeds[1] {
             Seed::Account { field, .. } => assert_eq!(field.as_deref(), Some("owner")),
             _ => panic!("expected enriched account seed"),

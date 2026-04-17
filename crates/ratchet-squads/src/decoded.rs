@@ -157,7 +157,7 @@ mod tests {
         // instructions (SmallVec<u8, CompiledInstruction>): 1 ix, u8 prefix
         buf.push(1u8);
         buf.push(0); // program_id_index
-        // account_indexes SmallVec<u8,u8>: [0]
+                     // account_indexes SmallVec<u8,u8>: [0]
         buf.push(1);
         buf.push(0);
         // data SmallVec<u16,u8>: 4 bytes "ABCD"

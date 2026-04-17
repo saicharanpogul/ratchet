@@ -57,22 +57,16 @@ impl Rule for InstructionSignerWritableFlip {
                 let Some(new_acc) = new_by_name.get(old_acc.name.as_str()) else {
                     continue;
                 };
-                let signer_tightened =
-                    !old_acc.is_signer && new_acc.is_signer;
-                let signer_relaxed =
-                    old_acc.is_signer && !new_acc.is_signer;
-                let writable_tightened =
-                    !old_acc.is_writable && new_acc.is_writable;
-                let writable_relaxed =
-                    old_acc.is_writable && !new_acc.is_writable;
-                if !signer_tightened && !signer_relaxed
-                    && !writable_tightened && !writable_relaxed
+                let signer_tightened = !old_acc.is_signer && new_acc.is_signer;
+                let signer_relaxed = old_acc.is_signer && !new_acc.is_signer;
+                let writable_tightened = !old_acc.is_writable && new_acc.is_writable;
+                let writable_relaxed = old_acc.is_writable && !new_acc.is_writable;
+                if !signer_tightened && !signer_relaxed && !writable_tightened && !writable_relaxed
                 {
                     continue;
                 }
 
-                let tightening =
-                    signer_tightened || writable_tightened;
+                let tightening = signer_tightened || writable_tightened;
 
                 let mut changes = Vec::new();
                 if signer_tightened || signer_relaxed {
@@ -109,21 +103,16 @@ impl Rule for InstructionSignerWritableFlip {
 
                 let mut finding = self
                     .finding(severity)
-                    .at([
-                        format!("ix:{name}"),
-                        format!("account:{}", old_acc.name),
-                    ])
+                    .at([format!("ix:{name}"), format!("account:{}", old_acc.name)])
                     .message(message)
                     .old(flags(old_acc))
                     .new_value(flags(new_acc));
                 if tightening {
-                    finding = finding
-                        .allow_flag("allow-signer-mut-flip")
-                        .suggestion(
-                            "Existing transactions encode the signer/writable bits in their \
+                    finding = finding.allow_flag("allow-signer-mut-flip").suggestion(
+                        "Existing transactions encode the signer/writable bits in their \
                              AccountMeta list. Tightening breaks pre-flight; coordinate the \
                              rollout with callers or create a new instruction.",
-                        );
+                    );
                 }
                 findings.push(finding);
             }
@@ -182,7 +171,10 @@ mod tests {
 
     #[test]
     fn identical_flags_no_finding() {
-        let s = surface(ix(vec![acc("user", true, false), acc("vault", false, true)]));
+        let s = surface(ix(vec![
+            acc("user", true, false),
+            acc("vault", false, true),
+        ]));
         assert!(InstructionSignerWritableFlip
             .check(&s, &s, &CheckContext::new())
             .is_empty());

@@ -271,10 +271,7 @@ fn render_squads_human(args: &SquadsArgs, summary: &ratchet_squads::VaultTransac
         }
     }
     if !summary.referenced_pubkeys.is_empty() {
-        println!(
-            "referenced pubkeys ({}):",
-            summary.referenced_pubkeys.len()
-        );
+        println!("referenced pubkeys ({}):", summary.referenced_pubkeys.len());
         for k in &summary.referenced_pubkeys {
             println!("  {k}");
         }
@@ -342,12 +339,9 @@ fn replay(args: ReplayArgs, as_json: bool) -> Result<i32> {
 
     let deploy_report = if args.deploy {
         let so_path = args.so.as_ref().expect("clap enforces --so with --deploy");
-        let bytes = std::fs::read(so_path)
-            .with_context(|| format!("reading {}", so_path.display()))?;
-        Some(
-            verify_deploy(&args.program, &bytes)
-                .context("running LiteSVM deploy smoke test")?,
-        )
+        let bytes =
+            std::fs::read(so_path).with_context(|| format!("reading {}", so_path.display()))?;
+        Some(verify_deploy(&args.program, &bytes).context("running LiteSVM deploy smoke test")?)
     } else {
         None
     };
@@ -378,12 +372,19 @@ fn replay(args: ReplayArgs, as_json: bool) -> Result<i32> {
         .as_ref()
         .map(|d| !d.deploy_succeeded)
         .unwrap_or(false);
-    Ok(if report.is_clean() && !deploy_failed { 0 } else { 1 })
+    Ok(if report.is_clean() && !deploy_failed {
+        0
+    } else {
+        1
+    })
 }
 
 fn render_deploy(d: &DeployReport) {
     if d.deploy_succeeded {
-        println!("deploy ok: {} loaded into LiteSVM successfully", d.program_id);
+        println!(
+            "deploy ok: {} loaded into LiteSVM successfully",
+            d.program_id
+        );
     } else {
         println!(
             "deploy FAILED: {} rejected by LiteSVM{}",
@@ -406,7 +407,11 @@ fn render_binary_info(info: &SbfProgramInfo, path: &std::path::Path) {
         ratchet_svm::sbpf_version_hint(info.e_flags),
         if info.elf_class_64 { 64 } else { 32 },
         if info.little_endian { "little" } else { "big" },
-        if info.is_shared_object { "shared-object" } else { "not shared" },
+        if info.is_shared_object {
+            "shared-object"
+        } else {
+            "not shared"
+        },
     );
 }
 

@@ -41,7 +41,10 @@ impl Rule for EnumVariantAppend {
     ) -> Vec<Finding> {
         let mut findings = Vec::new();
         for (name, old_ty) in &old.types {
-            let TypeDef::Enum { variants: old_variants } = old_ty else {
+            let TypeDef::Enum {
+                variants: old_variants,
+            } = old_ty
+            else {
                 continue;
             };
             let Some(TypeDef::Enum {

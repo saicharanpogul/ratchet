@@ -10,10 +10,9 @@ use crate::idl::AnchorIdl;
 /// Parse an Anchor IDL from a JSON file on disk.
 pub fn load_idl_from_file(path: impl AsRef<Path>) -> Result<AnchorIdl> {
     let path = path.as_ref();
-    let content = fs::read_to_string(path)
-        .with_context(|| format!("reading IDL at {}", path.display()))?;
-    serde_json::from_str(&content)
-        .with_context(|| format!("parsing IDL at {}", path.display()))
+    let content =
+        fs::read_to_string(path).with_context(|| format!("reading IDL at {}", path.display()))?;
+    serde_json::from_str(&content).with_context(|| format!("parsing IDL at {}", path.display()))
 }
 
 /// Resolve and load an Anchor IDL from a standard Anchor workspace layout.

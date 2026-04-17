@@ -247,6 +247,9 @@ mod tests {
             data: vec![1, 2, 3],
         };
         let report = validate_surface(&s, &[sample]);
-        assert!(matches!(report.verdicts[0], AccountVerdict::Malformed { .. }));
+        assert!(matches!(
+            report.verdicts[0],
+            AccountVerdict::Malformed { .. }
+        ));
     }
 }

@@ -40,7 +40,10 @@ impl Rule for EnumVariantRemovedOrInserted {
     ) -> Vec<Finding> {
         let mut findings = Vec::new();
         for (name, old_ty) in &old.types {
-            let TypeDef::Enum { variants: old_variants } = old_ty else {
+            let TypeDef::Enum {
+                variants: old_variants,
+            } = old_ty
+            else {
                 continue;
             };
             let Some(TypeDef::Enum {
@@ -79,10 +82,7 @@ impl Rule for EnumVariantRemovedOrInserted {
                 if old_set.contains(*new_variant) {
                     continue; // shared, not newly inserted
                 }
-                let has_shared_after = new_names
-                    .iter()
-                    .skip(idx + 1)
-                    .any(|n| old_set.contains(n));
+                let has_shared_after = new_names.iter().skip(idx + 1).any(|n| old_set.contains(n));
                 if has_shared_after {
                     findings.push(
                         self.finding(Severity::Breaking)
@@ -180,7 +180,10 @@ mod tests {
 
     #[test]
     fn remove_and_insert_emit_two_findings() {
-        let old = surface_with_enum("Side", vec![variant("Bid"), variant("Ask"), variant("Stop")]);
+        let old = surface_with_enum(
+            "Side",
+            vec![variant("Bid"), variant("Ask"), variant("Stop")],
+        );
         let new = surface_with_enum(
             "Side",
             vec![variant("Cross"), variant("Bid"), variant("Ask")],

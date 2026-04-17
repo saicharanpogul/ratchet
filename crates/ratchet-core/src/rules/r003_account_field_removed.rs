@@ -49,8 +49,7 @@ impl Rule for AccountFieldRemoved {
             let Some(new_acc) = new.accounts.get(name) else {
                 continue;
             };
-            let new_names: HashSet<&str> =
-                new_acc.fields.iter().map(|f| f.name.as_str()).collect();
+            let new_names: HashSet<&str> = new_acc.fields.iter().map(|f| f.name.as_str()).collect();
             let has_migration = ctx.has_migration(name);
             for old_field in &old_acc.fields {
                 if new_names.contains(old_field.name.as_str()) {
@@ -81,13 +80,11 @@ impl Rule for AccountFieldRemoved {
                     .message(message)
                     .old(format!("{}", old_field.ty));
                 if !has_migration {
-                    finding = finding
-                        .allow_flag("allow-field-removed")
-                        .suggestion(
-                            "Keep the field and stop using it, declare the account in \
+                    finding = finding.allow_flag("allow-field-removed").suggestion(
+                        "Keep the field and stop using it, declare the account in \
                              --migrated-account, or write a migration instruction that \
                              rewrites every account with a new layout and shrinks via `realloc`.",
-                        );
+                    );
                 }
                 findings.push(finding);
             }
@@ -130,7 +127,10 @@ mod tests {
 
     #[test]
     fn identical_fields_produce_no_finding() {
-        let s = surface(acc(vec![f("a", PrimitiveType::U64), f("b", PrimitiveType::U8)]));
+        let s = surface(acc(vec![
+            f("a", PrimitiveType::U64),
+            f("b", PrimitiveType::U8),
+        ]));
         assert!(AccountFieldRemoved
             .check(&s, &s, &CheckContext::new())
             .is_empty());

@@ -72,10 +72,7 @@ pub fn verify_sbf_program(bytes: &[u8]) -> Result<SbfProgramInfo> {
     let e_flags = u32::from_le_bytes([bytes[48], bytes[49], bytes[50], bytes[51]]);
 
     if !elf_class_64 {
-        bail!(
-            "ELF must be 64-bit (EI_CLASS=2); got EI_CLASS={}",
-            bytes[4]
-        );
+        bail!("ELF must be 64-bit (EI_CLASS=2); got EI_CLASS={}", bytes[4]);
     }
     if !little_endian {
         bail!(

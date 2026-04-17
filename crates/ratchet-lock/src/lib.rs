@@ -24,6 +24,17 @@ pub const DEFAULT_FILENAME: &str = "ratchet.lock";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Lockfile {
     pub version: u32,
+    /// Elevated from `surface.program_id` so tooling can read the lock's
+    /// bound program without deserialising the full surface. Present
+    /// whenever the surface had a program id at lock time.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub program_id: Option<String>,
+    /// Program name at lock time. Useful to spot lockfile/target
+    /// mismatches early ("this is vault.lock but you passed
+    /// target/idl/treasury.json"). Optional for backward compatibility
+    /// with v0 lockfiles that predate the envelope fields.
+    #[serde(default)]
+    pub program_name: String,
     pub surface: ProgramSurface,
 }
 
@@ -32,8 +43,40 @@ impl Lockfile {
     pub fn of(surface: ProgramSurface) -> Self {
         Self {
             version: CURRENT_VERSION,
+            program_id: surface.program_id.clone(),
+            program_name: surface.name.clone(),
             surface,
         }
+    }
+
+    /// Return `Err` when the candidate surface binds a program id that
+    /// disagrees with what the lockfile captured, or whose program name
+    /// differs. When either side is missing an identifier, the check is
+    /// skipped — loud failure requires both sides to have named the same
+    /// thing. Returns `Ok(())` on match and on missing-either-side.
+    pub fn ensure_matches(&self, candidate: &ProgramSurface) -> anyhow::Result<()> {
+        if !self.program_name.is_empty()
+            && !candidate.name.is_empty()
+            && self.program_name != candidate.name
+        {
+            anyhow::bail!(
+                "lockfile is for program `{}`, but the candidate IDL's name is `{}`",
+                self.program_name,
+                candidate.name
+            );
+        }
+        if let (Some(locked_pid), Some(candidate_pid)) =
+            (self.program_id.as_deref(), candidate.program_id.as_deref())
+        {
+            if locked_pid != candidate_pid {
+                anyhow::bail!(
+                    "lockfile was captured against program id `{locked_pid}`, but the \
+                     candidate IDL binds `{candidate_pid}`. If this is intentional, regenerate \
+                     the lockfile with `ratchet lock`.",
+                );
+            }
+        }
+        Ok(())
     }
 
     /// Serialize to pretty JSON (stable field order via `BTreeMap`
@@ -110,7 +153,8 @@ mod tests {
 
     #[test]
     fn rejects_future_version() {
-        let future = r#"{ "version": 9999, "surface": { "name": "vault" } }"#;
+        let future =
+            r#"{ "version": 9999, "program_name": "vault", "surface": { "name": "vault" } }"#;
         let err = Lockfile::from_json(future).unwrap_err();
         assert!(format!("{err}").contains("unsupported"));
     }
@@ -140,5 +184,48 @@ mod tests {
         assert!(json.ends_with('\n'));
         assert!(json.contains("\"version\": 1"));
         assert!(json.contains("\"Vault\""));
+    }
+
+    #[test]
+    fn envelope_surfaces_program_id_and_name() {
+        let lock = Lockfile::of(sample_surface());
+        assert_eq!(lock.program_name, "vault");
+        assert_eq!(
+            lock.program_id.as_deref(),
+            Some("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS")
+        );
+    }
+
+    #[test]
+    fn ensure_matches_accepts_identical_identity() {
+        let lock = Lockfile::of(sample_surface());
+        let candidate = sample_surface();
+        lock.ensure_matches(&candidate).unwrap();
+    }
+
+    #[test]
+    fn ensure_matches_rejects_different_program_id() {
+        let lock = Lockfile::of(sample_surface());
+        let mut candidate = sample_surface();
+        candidate.program_id = Some("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL".into());
+        let err = lock.ensure_matches(&candidate).unwrap_err();
+        assert!(format!("{err}").contains("program id"));
+    }
+
+    #[test]
+    fn ensure_matches_rejects_different_program_name() {
+        let lock = Lockfile::of(sample_surface());
+        let mut candidate = sample_surface();
+        candidate.name = "treasury".into();
+        let err = lock.ensure_matches(&candidate).unwrap_err();
+        assert!(format!("{err}").contains("treasury"));
+    }
+
+    #[test]
+    fn ensure_matches_tolerates_missing_candidate_program_id() {
+        let lock = Lockfile::of(sample_surface());
+        let mut candidate = sample_surface();
+        candidate.program_id = None;
+        lock.ensure_matches(&candidate).unwrap();
     }
 }

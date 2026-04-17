@@ -532,6 +532,13 @@ fn load_old(args: &CheckUpgradeArgs) -> Result<ProgramSurface> {
     if let Some(path) = &args.lock {
         let lock =
             Lockfile::read(path).with_context(|| format!("reading lockfile {}", path.display()))?;
+        // Tamper / mismatch check: lock's bound program identity must
+        // agree with the candidate's.
+        let new = load_idl_from_file(&args.new)
+            .and_then(|idl| normalize(&idl))
+            .with_context(|| format!("reading --new {}", args.new.display()))?;
+        lock.ensure_matches(&new)
+            .with_context(|| format!("comparing lockfile {} against --new", path.display()))?;
         return Ok(lock.surface);
     }
     if let Some(pubkey) = &args.idl_account {

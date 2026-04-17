@@ -24,7 +24,9 @@ pub mod report;
 pub mod validate;
 
 pub use deploy::{verify_deploy, DeployReport};
-pub use elf::{verify_sbf_program, verify_sbf_program_file, SbfProgramInfo, EM_BPF, EM_SBPF};
+pub use elf::{
+    sbpf_version_hint, verify_sbf_program, verify_sbf_program_file, SbfProgramInfo, EM_BPF,
+};
 pub use fetch::{fetch_program_accounts, ProgramAccount};
 pub use report::{AccountVerdict, ReplayReport, TypeTally};
 pub use validate::{min_account_size, validate_surface};

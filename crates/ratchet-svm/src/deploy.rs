@@ -105,6 +105,7 @@ mod tests_stub {
         hdr[5] = 1;
         hdr[16..18].copy_from_slice(&3u16.to_le_bytes());
         hdr[18..20].copy_from_slice(&0xf7u16.to_le_bytes());
+        // e_flags bytes at 48..52 left zero → sbpf-v0.
         let err = verify_deploy("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", &hdr).unwrap_err();
         assert!(format!("{err:#}").contains("litesvm"));
     }

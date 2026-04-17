@@ -398,10 +398,12 @@ fn render_deploy(d: &DeployReport) {
 
 fn render_binary_info(info: &SbfProgramInfo, path: &std::path::Path) {
     println!(
-        "binary ok: {} ({} bytes, machine={:#x}, {}-bit, {}-endian, {})",
+        "binary ok: {} ({} bytes, machine={:#x}, e_flags={:#x} [{}], {}-bit, {}-endian, {})",
         path.display(),
         info.size_bytes,
         info.machine,
+        info.e_flags,
+        ratchet_svm::sbpf_version_hint(info.e_flags),
         if info.elf_class_64 { 64 } else { 32 },
         if info.little_endian { "little" } else { "big" },
         if info.is_shared_object { "shared-object" } else { "not shared" },

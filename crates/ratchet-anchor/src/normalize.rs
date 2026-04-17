@@ -320,10 +320,36 @@ fn normalize_pda(pda: &AnchorIdlPda) -> Result<PdaSpec> {
         .iter()
         .map(normalize_seed)
         .collect::<Result<Vec<_>>>()?;
-    Ok(PdaSpec {
-        seeds,
-        program_id: None,
-    })
+    // If the IDL encodes the PDA as being derived off another program,
+    // try to resolve a literal pubkey. For Arg / Account-referenced
+    // program ids we keep the information but can't render a concrete
+    // base58 — fall back to a printable raw form so R013 can still diff
+    // "the program target changed" without invoking curve math.
+    let program_id = pda.program.as_ref().map(|p| render_program_seed(p));
+    Ok(PdaSpec { seeds, program_id })
+}
+
+fn render_program_seed(seed: &AnchorIdlSeed) -> String {
+    match seed {
+        AnchorIdlSeed::Const { value } => {
+            // 32-byte literal program id: encode as base58 so diffs show
+            // a human-comparable pubkey. Non-32-byte literals fall back
+            // to a hex rendering.
+            if value.len() == 32 {
+                let mut arr = [0u8; 32];
+                arr.copy_from_slice(value);
+                bs58::encode(arr).into_string()
+            } else {
+                let hex: String = value.iter().map(|b| format!("{b:02x}")).collect();
+                format!("const:0x{hex}")
+            }
+        }
+        AnchorIdlSeed::Arg { path } => format!("arg:{path}"),
+        AnchorIdlSeed::Account { path, account } => match account {
+            Some(a) => format!("account:{path}::{a}"),
+            None => format!("account:{path}"),
+        },
+    }
 }
 
 fn normalize_seed(seed: &AnchorIdlSeed) -> Result<Seed> {
@@ -527,6 +553,81 @@ mod tests {
             [d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7]]
         };
         assert_eq!(default_instruction_discriminator("initialize"), expected);
+    }
+
+    #[test]
+    fn pda_program_preserved_as_base58() {
+        let idl: AnchorIdl = serde_json::from_str(
+            r#"{
+                "metadata": { "name": "p" },
+                "instructions": [
+                    {
+                        "name": "doit",
+                        "accounts": [
+                            {
+                                "name": "acct",
+                                "pda": {
+                                    "seeds": [{ "kind": "const", "value": [1, 2, 3] }],
+                                    "program": {
+                                        "kind": "const",
+                                        "value": [6, 221, 246, 225, 215, 101, 161, 147, 217, 203, 225, 70, 206, 235, 121, 172, 28, 180, 133, 237, 95, 91, 55, 145, 58, 140, 245, 133, 126, 255, 0, 169]
+                                    }
+                                }
+                            }
+                        ],
+                        "args": []
+                    }
+                ],
+                "accounts": [],
+                "types": []
+            }"#,
+        )
+        .unwrap();
+        let surface = normalize(&idl).unwrap();
+        let pda = surface.instructions["doit"].accounts[0]
+            .pda
+            .as_ref()
+            .unwrap();
+        // Base58 of the 32 literal bytes above — this happens to be the
+        // SPL Token program id; what matters for the test is that the
+        // normalizer round-trips bytes → base58 losslessly.
+        assert_eq!(
+            pda.program_id.as_deref(),
+            Some("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
+        );
+    }
+
+    #[test]
+    fn pda_program_from_account_seed_uses_raw_label() {
+        let idl: AnchorIdl = serde_json::from_str(
+            r#"{
+                "metadata": { "name": "p" },
+                "instructions": [
+                    {
+                        "name": "doit",
+                        "accounts": [
+                            {
+                                "name": "acct",
+                                "pda": {
+                                    "seeds": [{ "kind": "const", "value": [1] }],
+                                    "program": { "kind": "account", "path": "remote_program" }
+                                }
+                            }
+                        ],
+                        "args": []
+                    }
+                ],
+                "accounts": [],
+                "types": []
+            }"#,
+        )
+        .unwrap();
+        let surface = normalize(&idl).unwrap();
+        let pda = surface.instructions["doit"].accounts[0]
+            .pda
+            .as_ref()
+            .unwrap();
+        assert_eq!(pda.program_id.as_deref(), Some("account:remote_program"));
     }
 
     #[test]

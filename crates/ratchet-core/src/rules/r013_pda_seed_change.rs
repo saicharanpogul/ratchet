@@ -59,11 +59,55 @@ impl Rule for PdaSeedChange {
                     continue;
                 };
                 match (&old_acc.pda, &new_acc.pda) {
-                    (None, None) | (None, Some(_)) | (Some(_), None) => {
-                        // No baseline to compare; Anchor may have dropped
-                        // seed info or this isn't a PDA in one version.
-                        // Skip silently — catching these needs source-level
-                        // analysis (deferred Phase 2 work).
+                    (None, None) => {
+                        // Neither version declares a PDA; nothing to diff.
+                    }
+                    (Some(_), None) => {
+                        // An account that was a PDA is now a free address.
+                        // Existing on-chain accounts at the old PDA are
+                        // unreachable through this instruction; callers
+                        // pass an arbitrary pubkey instead.
+                        findings.push(
+                            self.finding(Severity::Breaking)
+                                .at([
+                                    format!("ix:{ix_name}"),
+                                    format!("account:{}", old_acc.name),
+                                    "pda".into(),
+                                ])
+                                .message(format!(
+                                    "account `{}.{}` is no longer a PDA; every existing account at the previously-derived address is orphaned",
+                                    ix_name, old_acc.name
+                                ))
+                                .allow_flag("allow-pda-shape-change")
+                                .suggestion(
+                                    "Keep the seeds declared so existing addresses remain \
+                                     reachable, or write a migration instruction that copies \
+                                     every old-PDA account to its new free-address form.",
+                                ),
+                        );
+                    }
+                    (None, Some(_)) => {
+                        // A previously free-address slot now expects
+                        // derivation. Existing callers pass raw pubkeys
+                        // that won't satisfy the new derivation check.
+                        findings.push(
+                            self.finding(Severity::Breaking)
+                                .at([
+                                    format!("ix:{ix_name}"),
+                                    format!("account:{}", old_acc.name),
+                                    "pda".into(),
+                                ])
+                                .message(format!(
+                                    "account `{}.{}` newly requires PDA derivation; existing callers will fail seeds constraint",
+                                    ix_name, old_acc.name
+                                ))
+                                .allow_flag("allow-pda-shape-change")
+                                .suggestion(
+                                    "Existing callers pass raw addresses for this slot. Publish \
+                                     a new instruction name rather than adding seeds to an \
+                                     already-shipped one, or flag-day all callers.",
+                                ),
+                        );
                     }
                     (Some(old_pda), Some(new_pda)) => {
                         if !pdas_equal(old_pda, new_pda) {
@@ -78,11 +122,11 @@ impl Rule for PdaSeedChange {
                                         "PDA seeds of `{}.{}` changed: [{}] → [{}]",
                                         ix_name,
                                         old_acc.name,
-                                        render_seeds(&old_pda.seeds),
-                                        render_seeds(&new_pda.seeds),
+                                        render_seeds_and_program(old_pda),
+                                        render_seeds_and_program(new_pda),
                                     ))
-                                    .old(render_seeds(&old_pda.seeds))
-                                    .new_value(render_seeds(&new_pda.seeds))
+                                    .old(render_seeds_and_program(old_pda))
+                                    .new_value(render_seeds_and_program(new_pda))
                                     .suggestion(
                                         "Restore the original seeds, or write a migration \
                                          instruction that reads accounts at the old PDA and \
@@ -131,6 +175,14 @@ fn render_seeds(seeds: &[Seed]) -> String {
         .map(render_seed)
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+fn render_seeds_and_program(pda: &PdaSpec) -> String {
+    let base = render_seeds(&pda.seeds);
+    match &pda.program_id {
+        Some(p) => format!("{base} | program={p}"),
+        None => base,
+    }
 }
 
 fn render_seed(seed: &Seed) -> String {
@@ -281,7 +333,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_pda_info_on_either_side_is_silently_skipped() {
+    fn pda_dropped_is_breaking_with_allow() {
         let old = surface(ix(vec![acc_with_pda(
             "vault",
             Some(pda(vec![Seed::Const {
@@ -289,16 +341,60 @@ mod tests {
             }])),
         )]));
         let new = surface(ix(vec![acc_with_pda("vault", None)]));
-        // Pre-0.30 IDLs strip seed info; we can't reliably compare so we
-        // stay silent rather than produce false positives.
-        assert!(PdaSeedChange
-            .check(&old, &new, &CheckContext::new())
-            .is_empty());
+        let findings = PdaSeedChange.check(&old, &new, &CheckContext::new());
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].severity, Severity::Breaking);
+        assert_eq!(
+            findings[0].allow_flag.as_deref(),
+            Some("allow-pda-shape-change")
+        );
+        assert!(findings[0].message.contains("no longer a PDA"));
+    }
+
+    #[test]
+    fn pda_newly_required_is_breaking_with_allow() {
+        let old = surface(ix(vec![acc_with_pda("vault", None)]));
+        let new = surface(ix(vec![acc_with_pda(
+            "vault",
+            Some(pda(vec![Seed::Const {
+                bytes: b"vault".to_vec(),
+            }])),
+        )]));
+        let findings = PdaSeedChange.check(&old, &new, &CheckContext::new());
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].severity, Severity::Breaking);
+        assert!(findings[0].message.contains("newly requires PDA"));
     }
 
     #[test]
     fn non_pda_accounts_are_untouched() {
         let s = surface(ix(vec![acc_with_pda("vault", None)]));
         assert!(PdaSeedChange.check(&s, &s, &CheckContext::new()).is_empty());
+    }
+
+    #[test]
+    fn program_id_change_is_breaking() {
+        let old = surface(ix(vec![acc_with_pda(
+            "meta",
+            Some(PdaSpec {
+                seeds: vec![Seed::Const {
+                    bytes: b"metadata".to_vec(),
+                }],
+                program_id: Some("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".into()),
+            }),
+        )]));
+        let new = surface(ix(vec![acc_with_pda(
+            "meta",
+            Some(PdaSpec {
+                seeds: vec![Seed::Const {
+                    bytes: b"metadata".to_vec(),
+                }],
+                program_id: Some("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL".into()),
+            }),
+        )]));
+        let findings = PdaSeedChange.check(&old, &new, &CheckContext::new());
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].severity, Severity::Breaking);
+        assert!(findings[0].message.contains("program="));
     }
 }

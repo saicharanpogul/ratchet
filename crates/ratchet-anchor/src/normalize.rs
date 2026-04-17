@@ -212,8 +212,17 @@ fn parse_primitive(s: &str) -> Result<TypeRef> {
         "bytes" => PrimitiveType::Bytes,
         "pubkey" | "publicKey" => PrimitiveType::Pubkey,
         other => {
-            // Treat anything else as a reference to a user-defined type.
-            return Ok(TypeRef::Defined { name: other.into() });
+            // Unknown string in primitive position. Could be:
+            // (a) a user-defined type referenced by bare name (rare but
+            //     accepted by older Anchor IDLs) — will be resolved by
+            //     ProgramSurface.types if present.
+            // (b) a future Anchor primitive we don't model yet.
+            // We return `Unrecognized` rather than `Defined` so the
+            //     diff engine surfaces the raw string explicitly and
+            //     validate.rs knows not to assume a size.
+            return Ok(TypeRef::Unrecognized {
+                raw: other.into(),
+            });
         }
     };
     Ok(TypeRef::primitive(prim))
@@ -259,16 +268,13 @@ fn parse_complex(v: &serde_json::Value) -> Result<TypeRef> {
         };
         return Ok(TypeRef::Defined { name });
     }
-    // Unknown type constructors (coption, hashMap, generics, ...) are kept as
-    // opaque Defined references so downstream diffs remain stable.
-    let first_key = obj
-        .keys()
-        .next()
-        .cloned()
-        .unwrap_or_else(|| "unknown".into());
-    Ok(TypeRef::Defined {
-        name: format!("unsupported:{first_key}"),
-    })
+    // Unknown type constructors (coption, hashMap, generics, ...) are
+    // preserved verbatim — the raw JSON is kept so a retype like
+    // `coption<u64> → coption<u32>` still differs when the inner type
+    // changes. `Unrecognized` keeps these distinct from user-defined
+    // `Defined` references in downstream tooling and min-size accounting.
+    let raw = serde_json::to_string(v).unwrap_or_else(|_| String::from("<unserializable>"));
+    Ok(TypeRef::Unrecognized { raw })
 }
 
 fn parse_value_as_type_ref(v: &serde_json::Value) -> Result<TypeRef> {
@@ -553,6 +559,75 @@ mod tests {
             [d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7]]
         };
         assert_eq!(default_instruction_discriminator("initialize"), expected);
+    }
+
+    #[test]
+    fn unknown_primitive_becomes_unrecognized() {
+        let idl: AnchorIdl = serde_json::from_str(
+            r#"{
+                "metadata": { "name": "p" },
+                "instructions": [
+                    {
+                        "name": "doit",
+                        "accounts": [],
+                        "args": [{ "name": "amt", "type": "u256" }]
+                    }
+                ],
+                "accounts": [],
+                "types": []
+            }"#,
+        )
+        .unwrap();
+        let surface = normalize(&idl).unwrap();
+        match &surface.instructions["doit"].args[0].ty {
+            TypeRef::Unrecognized { raw } => assert_eq!(raw, "u256"),
+            other => panic!("expected Unrecognized, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unknown_complex_preserves_inner_type() {
+        // Two IDLs that differ only in the inner type of a coption
+        // constructor. Under the old "unsupported:coption" flattening
+        // they'd compare equal; with Unrecognized their raw JSON
+        // differs and the diff engine notices.
+        let old: AnchorIdl = serde_json::from_str(
+            r#"{
+                "metadata": {"name":"p"},
+                "instructions":[{
+                    "name":"doit","accounts":[],
+                    "args":[{"name":"x","type":{"coption":"u64"}}]
+                }],
+                "accounts":[],"types":[]
+            }"#,
+        )
+        .unwrap();
+        let new: AnchorIdl = serde_json::from_str(
+            r#"{
+                "metadata": {"name":"p"},
+                "instructions":[{
+                    "name":"doit","accounts":[],
+                    "args":[{"name":"x","type":{"coption":"u32"}}]
+                }],
+                "accounts":[],"types":[]
+            }"#,
+        )
+        .unwrap();
+        let old_s = normalize(&old).unwrap();
+        let new_s = normalize(&new).unwrap();
+        let old_ty = &old_s.instructions["doit"].args[0].ty;
+        let new_ty = &new_s.instructions["doit"].args[0].ty;
+        assert_ne!(
+            old_ty, new_ty,
+            "coption<u64> and coption<u32> must not compare equal"
+        );
+        match (old_ty, new_ty) {
+            (TypeRef::Unrecognized { raw: a }, TypeRef::Unrecognized { raw: b }) => {
+                assert!(a.contains("u64"));
+                assert!(b.contains("u32"));
+            }
+            _ => panic!("expected both Unrecognized"),
+        }
     }
 
     #[test]

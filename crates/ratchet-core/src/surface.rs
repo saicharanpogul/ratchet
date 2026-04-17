@@ -247,6 +247,14 @@ pub enum TypeRef {
     Defined {
         name: String,
     },
+    /// The normalizer saw something it couldn't classify — a primitive
+    /// string we don't recognize (future Anchor additions, typos) or a
+    /// complex-type constructor we don't model (`coption`, `hashMap`,
+    /// generics, …). `raw` captures the full JSON or primitive name so
+    /// a diff can still tell `coption<u64> → coption<u32>` apart.
+    Unrecognized {
+        raw: String,
+    },
 }
 
 impl TypeRef {
@@ -263,6 +271,7 @@ impl fmt::Display for TypeRef {
             TypeRef::Vec { ty } => write!(f, "Vec<{ty}>"),
             TypeRef::Option { ty } => write!(f, "Option<{ty}>"),
             TypeRef::Defined { name } => write!(f, "{name}"),
+            TypeRef::Unrecognized { raw } => write!(f, "unrecognized<{raw}>"),
         }
     }
 }

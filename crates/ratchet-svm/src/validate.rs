@@ -98,6 +98,13 @@ fn type_min_size(surface: &ProgramSurface, ty: &TypeRef) -> usize {
         // length and 1-byte tag respectively).
         TypeRef::Vec { .. } => 4,
         TypeRef::Option { .. } => 1,
+        TypeRef::Unrecognized { .. } => {
+            // Unknown shape — can't bound its size. Returning 0 keeps
+            // min_account_size a true lower bound: accounts whose
+            // only oversized fields are Unrecognized won't be flagged
+            // as undersized by mistake.
+            0
+        }
         TypeRef::Defined { name } => match surface.types.get(name) {
             Some(TypeDef::Struct { fields }) => fields_min_size(surface, fields),
             Some(TypeDef::Enum { variants }) => {

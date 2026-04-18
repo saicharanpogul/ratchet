@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+@theme {
+  /* Solana purple + green as the primary accent palette, pushed darker
+     to match the "late-night auditor" aesthetic rather than the
+     sparkly-official Solana brand look. */
+  --color-background: #07070c;
+  --color-background-subtle: #0f0f17;
+  --color-border: #1e1e2a;
+  --color-border-strong: #2a2a3a;
+
+  --color-foreground: #e7e7f0;
+  --color-muted: #8a8a9a;
+  --color-dim: #5a5a6a;
+
+  --color-accent-purple: #9945ff;
+  --color-accent-purple-dim: #6b2dbb;
+  --color-accent-green: #14f195;
+  --color-accent-green-dim: #0ea876;
+
+  --color-breaking: #ff3d57;
+  --color-unsafe: #f5a524;
+  --color-additive: #14f195;
+
+  --font-sans: "Inter", "SF Pro Text", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Menlo", ui-monospace, monospace;
+}
+
+html,
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings:
+    "cv02" on,
+    "cv03" on,
+    "cv04" on,
+    "cv11" on;
+}
+
+body {
+  /* Subtle radial vignette so the page doesn't feel flat. */
+  background:
+    radial-gradient(
+      ellipse 80% 60% at 50% 0%,
+      rgba(153, 69, 255, 0.06),
+      transparent 60%
+    ),
+    var(--color-background);
+  min-height: 100vh;
+}
+
+::selection {
+  background: color-mix(in oklch, var(--color-accent-purple) 40%, transparent);
+  color: var(--color-foreground);
+}
+
+/* Tight mono blocks used for findings + install snippets. */
+.mono {
+  font-family: var(--font-mono);
+  font-variant-ligatures: none;
+}
+
+/* Reusable classes — avoids repeating the same Tailwind soup ten times. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border-radius: 9999px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-background-subtle);
+  color: var(--color-muted);
+}
+
+.chip-breaking {
+  border-color: color-mix(in oklch, var(--color-breaking) 60%, transparent);
+  color: var(--color-breaking);
+  background: color-mix(in oklch, var(--color-breaking) 10%, transparent);
+}
+
+.chip-unsafe {
+  border-color: color-mix(in oklch, var(--color-unsafe) 60%, transparent);
+  color: var(--color-unsafe);
+  background: color-mix(in oklch, var(--color-unsafe) 10%, transparent);
+}
+
+.chip-additive {
+  border-color: color-mix(in oklch, var(--color-additive) 50%, transparent);
+  color: var(--color-additive);
+  background: color-mix(in oklch, var(--color-additive) 8%, transparent);
+}

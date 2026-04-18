@@ -135,9 +135,16 @@ ratchet replay --program <PID> --new target/idl/vault.json \
 ratchet check-upgrade --lock ratchet.lock --new new.json \
   --unsafe allow-rename
 
-# Declare a Migration<From, To> for the Vault account
+# Declare a Migration<From, To> for the Vault account — demotes
+# R003 (removed), R004 (mid-insert), R005 (append) for that account.
 ratchet check-upgrade --lock ratchet.lock --new new.json \
   --migrated-account Vault
+
+# Declare an Anchor realloc constraint for the Vault account — demotes
+# R005 (append) for that account. Auto-detected when --new-source is
+# provided and the field carries #[account(mut, realloc = ...)].
+ratchet check-upgrade --lock ratchet.lock --new new.json \
+  --realloc-account Vault
 ```
 
 ### JSON output for CI
@@ -172,17 +179,22 @@ See [`examples/github-workflow.yml`](examples/github-workflow.yml) for a complet
 |---|---|---|---|
 | R001 | account-field-reorder | BREAKING | — |
 | R002 | account-field-retype | BREAKING | `allow-type-change` |
-| R003 | account-field-removed | BREAKING | — |
-| R004 | account-field-insert-middle | BREAKING | — |
-| R005 | account-field-append | UNSAFE | `allow-field-append` or `Migration<_,_>` |
+| R003 | account-field-removed | BREAKING | `allow-field-removed` or `--migrated-account` |
+| R004 | account-field-insert-middle | BREAKING | `allow-field-insert` or `--migrated-account` |
+| R005 | account-field-append | UNSAFE | `allow-field-append`, `--realloc-account`, or `--migrated-account` |
 | R006 | account-discriminator-change | BREAKING | `allow-rename` |
 | R007 | instruction-removed | BREAKING | `allow-ix-removal` |
 | R008 | instruction-arg-change | BREAKING | `allow-ix-arg-change` |
 | R009 | instruction-account-list-change | BREAKING | `allow-ix-account-change` |
-| R010 | instruction-signer-writable-flip | BREAKING | `allow-signer-mut-flip` |
+| R010 | instruction-signer-writable-flip | BREAKING (tightening) / ADDITIVE (relaxation) | `allow-signer-mut-flip` |
 | R011 | enum-variant-removed-or-inserted | BREAKING | — |
 | R012 | enum-variant-append | ADDITIVE | — (informational) |
-| R013 | pda-seed-change | BREAKING | — |
+| R013 | pda-seed-change | BREAKING | `allow-pda-shape-change` (presence flip only) |
+| R014 | instruction-discriminator-change | BREAKING | `allow-ix-rename` |
+| R015 | account-removed | BREAKING | `allow-account-removal` |
+| R016 | event-discriminator-change | BREAKING | `allow-event-rename` |
+
+Pass an allow flag with `--unsafe <flag>` (e.g. `--unsafe allow-rename`). Declare migration coverage with `--migrated-account <Name>` or `--realloc-account <Name>` — both demote R005 appends to Additive, and `--migrated-account` also demotes R003/R004 since a declared migration can rewrite accounts to any layout.
 
 ## Example output
 

@@ -4,6 +4,14 @@ Upgrade-safety checker for Solana programs.
 
 `ratchet` compares a new program surface against the deployed program on-chain (or a committed `ratchet.lock` baseline) and flags changes that would silently corrupt data, break clients, or orphan PDAs — before the upgrade transaction lands.
 
+## Agent integration
+
+`ratchet` ships with a [`SKILL.md`](SKILL.md) at the repo root — a
+frontmattered skill definition any Claude-style agent can load to know
+when to invoke ratchet, which flags to use, and how to interpret
+findings. The same file is served at `/skill.md` on the website when
+deployed.
+
 ## Why
 
 Solana program upgrades have no equivalent of `buf breaking` or `@openzeppelin/hardhat-upgrades`. Today a developer can rename an `#[account]` struct, silently change the discriminator, and orphan every account the program owns — `solana program upgrade` will happily land it. `ratchet` closes that gap.
@@ -225,18 +233,21 @@ Exit code `1`.
 ```
 ratchet/
 ├── action.yml                      # GitHub Action (composite)
-├── crates/
+├── SKILL.md                        # agent-discoverable skill definition
+├── crates/                         # Rust workspace (all 8 crates publish under solana-ratchet-*)
 │   ├── ratchet-core/               # framework-agnostic IR and rule engine
 │   ├── ratchet-anchor/             # Anchor IDL loader, decoder, normalizer, RPC fetch, PDA derivation
 │   ├── ratchet-lock/               # ratchet.lock format
-│   ├── ratchet-source/             # syn-based source parser for PDA seeds
+│   ├── ratchet-source/             # syn-based source parser for PDA seeds + realloc constraints
 │   ├── ratchet-svm/                # sample-account runtime verification + ELF header check
 │   ├── ratchet-squads/             # Squads V4 vault-transaction decoder
 │   ├── ratchet-quasar/             # compiler-pass entry points and SurfaceBuilder
 │   └── ratchet-cli/                # the `ratchet` binary
+├── web/                            # Next.js 15 frontend (landing, /diff, /rules, /skill.md)
 ├── examples/
 │   └── github-workflow.yml
 ├── docs/
+│   ├── publishing.md
 │   └── quasar-integration.md
 └── ...
 ```

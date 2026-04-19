@@ -45,10 +45,8 @@ pub(crate) fn check_upgrade_inner(
     let new_idl: AnchorIdl =
         serde_json::from_str(new_idl_json).map_err(|e| format!("parsing new IDL: {e}"))?;
 
-    let old_surface =
-        normalize(&old_idl).map_err(|e| format!("normalizing old IDL: {e:#}"))?;
-    let new_surface =
-        normalize(&new_idl).map_err(|e| format!("normalizing new IDL: {e:#}"))?;
+    let old_surface = normalize(&old_idl).map_err(|e| format!("normalizing old IDL: {e:#}"))?;
+    let new_surface = normalize(&new_idl).map_err(|e| format!("normalizing new IDL: {e:#}"))?;
 
     let ctx = CheckContext::new();
     let rules = default_rules();

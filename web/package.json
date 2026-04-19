@@ -9,6 +9,7 @@
     "predev": "npm run build:wasm",
     "prebuild": "npm run build:wasm",
     "pretest": "npm run build:wasm:node",
+    "pretypecheck": "npm run build:wasm && npm run build:wasm:node",
     "dev": "next dev --turbo",
     "build": "next build",
     "start": "next start",

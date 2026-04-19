@@ -34,14 +34,15 @@ let ready: Promise<void> | null = null;
 
 function ensureReady(): Promise<void> {
   if (ready) return ready;
-  ready = init().then(
+  const p: Promise<void> = init().then(
     () => undefined,
-    (err) => {
+    (err: unknown) => {
       ready = null;
       throw err;
     },
   );
-  return ready;
+  ready = p;
+  return p;
 }
 
 export async function ratchetVersion(): Promise<string> {

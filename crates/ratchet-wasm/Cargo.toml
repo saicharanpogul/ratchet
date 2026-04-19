@@ -1,0 +1,44 @@
+[package]
+name = "solana-ratchet-wasm"
+description = "WebAssembly bindings for ratchet — run upgrade-safety checks in the browser without a server"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lib]
+# cdylib is required for wasm-pack to emit the .wasm + JS glue.
+# rlib lets the same crate be used by plain `cargo test` on native
+# targets (where wasm-bindgen's generated #[cfg(target_arch = "wasm32")]
+# code gates out the wasm-specific bits).
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# No default features — ureq and the fetch module drop out on wasm32.
+ratchet-core = { package = "solana-ratchet-core", path = "../ratchet-core", version = "0.2.0" }
+ratchet-anchor = { package = "solana-ratchet-anchor", path = "../ratchet-anchor", version = "0.2.0", default-features = false }
+wasm-bindgen.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+wasm-bindgen-test.workspace = true
+
+# Disable wasm-opt: the bundled binary shipped with wasm-pack fails to
+# validate some of the reference-type bits modern wasm-bindgen emits on
+# macOS. Skipping it keeps the artifact ~30% larger but the build works
+# out of the box; production builds can turn it back on via a newer
+# wasm-opt on PATH.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
+[package.metadata.wasm-pack.profile.dev]
+wasm-opt = false
+
+[package.metadata.wasm-pack.profile.profiling]
+wasm-opt = false

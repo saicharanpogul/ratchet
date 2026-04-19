@@ -8,6 +8,7 @@ members = [
     "crates/ratchet-svm",
     "crates/ratchet-quasar",
     "crates/ratchet-squads",
+    "crates/ratchet-wasm",
     "crates/ratchet-cli",
 ]
 
@@ -41,6 +42,8 @@ quote = "1"
 walkdir = "2"
 litesvm = "0.6"
 solana-pubkey = "2"
+wasm-bindgen = "0.2"
+wasm-bindgen-test = "0.3"
 
 [profile.release]
 lto = "thin"

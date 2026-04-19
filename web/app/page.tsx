@@ -35,10 +35,16 @@ function Hero() {
         </p>
         <div className="flex flex-wrap gap-3 pt-2">
           <Link
-            href="/diff"
+            href="/readiness"
             className="px-5 py-2.5 rounded-md bg-[var(--color-accent-purple)] hover:bg-[var(--color-accent-purple-dim)] text-white font-medium transition-colors"
           >
-            Try the diff tool →
+            Check readiness →
+          </Link>
+          <Link
+            href="/diff"
+            className="px-5 py-2.5 rounded-md border border-[var(--color-border-strong)] hover:border-[var(--color-muted)] text-[var(--color-foreground)] transition-colors"
+          >
+            Upgrade diff
           </Link>
           <a
             href="https://github.com/saicharanpogul/ratchet"

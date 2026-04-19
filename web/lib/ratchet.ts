@@ -10,7 +10,11 @@
  * rule count ever grows.
  */
 
-import init, { check_upgrade, version } from "./ratchet-wasm/solana_ratchet_wasm.js";
+import init, {
+  check_readiness,
+  check_upgrade,
+  version,
+} from "./ratchet-wasm/solana_ratchet_wasm.js";
 
 export type Severity = "additive" | "unsafe" | "breaking";
 
@@ -61,5 +65,15 @@ export async function checkUpgrade(
 ): Promise<Report> {
   await ensureReady();
   const json = check_upgrade(oldIdl, newIdl);
+  return JSON.parse(json) as Report;
+}
+
+/**
+ * Lint a single Anchor IDL against the P-series readiness rules —
+ * "is this program mainnet-ready?" without needing a baseline.
+ */
+export async function checkReadiness(idl: string): Promise<Report> {
+  await ensureReady();
+  const json = check_readiness(idl);
   return JSON.parse(json) as Report;
 }

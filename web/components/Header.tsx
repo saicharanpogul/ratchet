@@ -14,6 +14,12 @@ export function Header() {
           </span>
         </Link>
         <nav className="flex items-center gap-5 text-sm text-[var(--color-muted)]">
+          <Link
+            href="/readiness"
+            className="hover:text-[var(--color-foreground)] transition-colors"
+          >
+            Readiness
+          </Link>
           <Link href="/diff" className="hover:text-[var(--color-foreground)] transition-colors">
             Diff
           </Link>

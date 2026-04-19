@@ -12,7 +12,7 @@
 
 #![cfg(target_arch = "wasm32")]
 
-use solana_ratchet_wasm::{check_upgrade, version};
+use solana_ratchet_wasm::{check_readiness, check_upgrade, version};
 use wasm_bindgen_test::*;
 
 // Default runner is Node. `wasm-pack test --node` matches the
@@ -129,4 +129,20 @@ fn malformed_input_surfaces_parse_error_via_js_error() {
     // but we can confirm the call fails rather than panicking.
     let err = check_upgrade("not json", V1);
     assert!(err.is_err());
+}
+
+#[wasm_bindgen_test]
+fn readiness_on_bare_v1_surfaces_preflight_findings() {
+    let out = check_readiness(V1).expect("check_readiness returned Err");
+    let report: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let ids: Vec<&str> = report["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["rule_id"].as_str().unwrap())
+        .collect();
+    // V1 vault has no version field, no reserved padding, default
+    // discriminator — exactly the patterns preflight calls out.
+    assert!(ids.contains(&"P001"));
+    assert!(ids.contains(&"P002"));
 }

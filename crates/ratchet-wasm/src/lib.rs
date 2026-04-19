@@ -14,7 +14,9 @@
 //! `build:wasm` script for the canonical invocation).
 
 use ratchet_anchor::{normalize, AnchorIdl};
-use ratchet_core::{check, default_rules, CheckContext};
+use ratchet_core::{
+    check, default_preflight_rules, default_rules, preflight, CheckContext,
+};
 use wasm_bindgen::prelude::*;
 
 /// Run the default rule set against two Anchor IDL JSON strings and
@@ -52,6 +54,27 @@ pub(crate) fn check_upgrade_inner(
     let rules = default_rules();
     let report = check(&old_surface, &new_surface, &ctx, &rules);
 
+    serde_json::to_string(&report).map_err(|e| format!("serializing report: {e}"))
+}
+
+/// Single-IDL readiness lint. Runs the P-series preflight rules
+/// against one Anchor IDL and returns the resulting `Report` as a
+/// JSON string.
+///
+/// Use for "is my IDL mainnet-ready?" questions before a first
+/// deploy. For upgrade diffs use [`check_upgrade`].
+#[wasm_bindgen]
+pub fn check_readiness(idl_json: &str) -> Result<String, JsError> {
+    check_readiness_inner(idl_json).map_err(|e| JsError::new(&e))
+}
+
+pub(crate) fn check_readiness_inner(idl_json: &str) -> Result<String, String> {
+    let idl: AnchorIdl =
+        serde_json::from_str(idl_json).map_err(|e| format!("parsing IDL: {e}"))?;
+    let surface = normalize(&idl).map_err(|e| format!("normalizing IDL: {e:#}"))?;
+    let ctx = CheckContext::new();
+    let rules = default_preflight_rules();
+    let report = preflight(&surface, &ctx, &rules);
     serde_json::to_string(&report).map_err(|e| format!("serializing report: {e}"))
 }
 
@@ -117,5 +140,38 @@ mod tests {
     #[test]
     fn version_string_matches_crate_version() {
         assert_eq!(version(), env!("CARGO_PKG_VERSION"));
+    }
+
+    #[test]
+    fn readiness_flags_missing_version_field() {
+        let idl = r#"{
+            "metadata": { "name": "t" },
+            "instructions": [],
+            "accounts": [{ "name": "State", "discriminator": [1,2,3,4,5,6,7,8] }],
+            "types": [
+                {
+                    "name": "State",
+                    "type": {
+                        "kind": "struct",
+                        "fields": [{ "name": "balance", "type": "u64" }]
+                    }
+                }
+            ]
+        }"#;
+        let out = check_readiness_inner(idl).unwrap();
+        let report: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let ids: Vec<&str> = report["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["rule_id"].as_str().unwrap())
+            .collect();
+        assert!(ids.contains(&"P001"));
+        assert!(ids.contains(&"P005")); // Name "State" is a collision too.
+    }
+
+    #[test]
+    fn readiness_malformed_input_errors() {
+        assert!(check_readiness_inner("not json").is_err());
     }
 }

@@ -13,6 +13,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  check_readiness,
   check_upgrade,
   version,
 } from "./ratchet-wasm-node/solana_ratchet_wasm.js";
@@ -138,5 +139,14 @@ describe("ratchet-wasm integration", () => {
 
   it("surfaces a JS error on malformed input", () => {
     expect(() => checkUpgrade("not json", V1)).toThrow();
+  });
+
+  it("readiness fires preflight rules on a bare V1 surface", () => {
+    const json = check_readiness(V1);
+    const report = JSON.parse(json) as Report;
+    const ids = new Set(report.findings.map((f) => f.rule_id));
+    // V1 has no version field (P001) and no reserved padding (P002).
+    expect(ids).toContain("P001");
+    expect(ids).toContain("P002");
   });
 });

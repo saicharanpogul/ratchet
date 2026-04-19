@@ -1,52 +1,24 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-
-type Severity = "additive" | "unsafe" | "breaking";
-
-interface Finding {
-  rule_id: string;
-  rule_name: string;
-  severity: Severity;
-  path: string[];
-  message: string;
-  old?: string;
-  new?: string;
-  suggestion?: string;
-  allow_flag?: string;
-}
-
-interface Report {
-  findings: Finding[];
-}
-
-interface CheckResult {
-  ok: boolean;
-  exit_code?: number;
-  report?: Report;
-  error?: string;
-  stderr?: string;
-}
+import { checkUpgrade, type Finding, type Report, type Severity } from "../../lib/ratchet";
 
 export default function DiffPage() {
   const [oldJson, setOldJson] = useState("");
   const [newJson, setNewJson] = useState("");
-  const [result, setResult] = useState<CheckResult | null>(null);
+  const [report, setReport] = useState<Report | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
 
   const runDiff = useCallback(async () => {
     setRunning(true);
-    setResult(null);
+    setReport(null);
+    setError(null);
     try {
-      const res = await fetch("/api/check", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ old: oldJson, new: newJson }),
-      });
-      const body: CheckResult = await res.json();
-      setResult(body);
+      const r = await checkUpgrade(oldJson, newJson);
+      setReport(r);
     } catch (e) {
-      setResult({ ok: false, error: String(e) });
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setRunning(false);
     }
@@ -55,7 +27,8 @@ export default function DiffPage() {
   const clear = () => {
     setOldJson("");
     setNewJson("");
-    setResult(null);
+    setReport(null);
+    setError(null);
   };
 
   return (
@@ -65,8 +38,9 @@ export default function DiffPage() {
           <h1 className="text-4xl font-semibold tracking-tight">Diff</h1>
           <p className="mt-2 text-[var(--color-muted)] max-w-2xl">
             Paste or drop two Anchor IDL JSON files. ratchet runs all 16 rules
-            server-side and reports every change with the exact path, old/new
-            values, and the allow-flag (if any) that could demote it.
+            in your browser via WebAssembly — nothing leaves your machine — and
+            reports every change with the exact path, old/new values, and the
+            allow-flag (if any) that could demote it.
           </p>
         </div>
         <div className="flex gap-2">
@@ -101,7 +75,8 @@ export default function DiffPage() {
         />
       </div>
 
-      {result && <ResultView result={result} />}
+      {error && <ErrorCard message={error} />}
+      {report && <ResultView report={report} />}
     </section>
   );
 }
@@ -172,7 +147,7 @@ function IdlDropzone({
         <textarea
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder='Paste IDL JSON here, or drag the file in / use the upload link above.'
+          placeholder="Paste IDL JSON here, or drag the file in / use the upload link above."
           className="mono w-full h-72 resize-none p-4 pt-5 bg-transparent outline-none text-sm text-[var(--color-foreground)] placeholder:text-[var(--color-dim)]"
           spellCheck={false}
         />
@@ -181,31 +156,24 @@ function IdlDropzone({
   );
 }
 
-function ResultView({ result }: { result: CheckResult }) {
-  if (!result.ok) {
-    return (
-      <div className="mt-8 rounded-lg border border-[var(--color-border)] p-5 bg-[var(--color-background-subtle)]">
-        <div className="mono text-xs text-[var(--color-dim)] uppercase tracking-widest">
-          Error
-        </div>
-        <div className="mt-2 text-sm text-[var(--color-foreground)]">
-          {result.error ?? "Unknown error"}
-        </div>
-        {result.stderr && (
-          <pre className="mono mt-3 text-xs text-[var(--color-muted)] whitespace-pre-wrap">
-            {result.stderr}
-          </pre>
-        )}
+function ErrorCard({ message }: { message: string }) {
+  return (
+    <div className="mt-8 rounded-lg border border-[var(--color-border)] p-5 bg-[var(--color-background-subtle)]">
+      <div className="mono text-xs text-[var(--color-dim)] uppercase tracking-widest">
+        Error
       </div>
-    );
-  }
+      <div className="mt-2 text-sm text-[var(--color-foreground)] mono whitespace-pre-wrap">
+        {message}
+      </div>
+    </div>
+  );
+}
 
-  const report = result.report ?? { findings: [] };
+function ResultView({ report }: { report: Report }) {
   const verdict = verdictOf(report);
-
   return (
     <div className="mt-10 space-y-6">
-      <VerdictBanner verdict={verdict} report={report} exitCode={result.exit_code ?? 0} />
+      <VerdictBanner verdict={verdict} report={report} />
       {report.findings.length === 0 ? (
         <div className="rounded-lg border border-[var(--color-border)] p-8 text-center text-[var(--color-muted)]">
           No findings. The surfaces match exactly.
@@ -242,11 +210,9 @@ function verdictOf(r: Report): Severity | "safe" {
 function VerdictBanner({
   verdict,
   report,
-  exitCode,
 }: {
   verdict: Severity | "safe";
   report: Report;
-  exitCode: number;
 }) {
   const tone = {
     safe: {
@@ -281,8 +247,7 @@ function VerdictBanner({
           {tone.label}
         </span>
         <span className="text-sm text-[var(--color-muted)]">
-          {report.findings.length} finding{report.findings.length === 1 ? "" : "s"} ·
-          exit <code className="mono">{exitCode}</code>
+          {report.findings.length} finding{report.findings.length === 1 ? "" : "s"}
         </span>
       </div>
       <div className="flex gap-2 text-xs mono">

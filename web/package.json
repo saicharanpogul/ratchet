@@ -5,8 +5,10 @@
   "description": "Web UI for ratchet — upgrade-safety checks for Solana programs",
   "scripts": {
     "build:wasm": "wasm-pack build ../crates/ratchet-wasm --target web --out-dir ../../web/lib/ratchet-wasm",
+    "build:wasm:node": "wasm-pack build ../crates/ratchet-wasm --target nodejs --out-dir ../../web/lib/ratchet-wasm-node",
     "predev": "npm run build:wasm",
     "prebuild": "npm run build:wasm",
+    "pretest": "npm run build:wasm:node",
     "dev": "next dev --turbo",
     "build": "next build",
     "start": "next start",

@@ -3466,7 +3466,7 @@ dependencies = [
 
 [[package]]
 name = "solana-ratchet-anchor"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3482,7 +3482,7 @@ dependencies = [
 
 [[package]]
 name = "solana-ratchet-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3498,7 +3498,7 @@ dependencies = [
 
 [[package]]
 name = "solana-ratchet-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3506,7 +3506,7 @@ dependencies = [
 
 [[package]]
 name = "solana-ratchet-lock"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "serde",
@@ -3516,7 +3516,7 @@ dependencies = [
 
 [[package]]
 name = "solana-ratchet-quasar"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "serde",
@@ -3526,7 +3526,7 @@ dependencies = [
 
 [[package]]
 name = "solana-ratchet-source"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "proc-macro2",
@@ -3540,7 +3540,7 @@ dependencies = [
 
 [[package]]
 name = "solana-ratchet-squads"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "bs58",
@@ -3551,7 +3551,7 @@ dependencies = [
 
 [[package]]
 name = "solana-ratchet-svm"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

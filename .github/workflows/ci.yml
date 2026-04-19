@@ -65,3 +65,43 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --workspace --no-deps
+
+  wasm:
+    # Builds the ratchet-wasm crate for wasm32-unknown-unknown via
+    # wasm-pack, runs wasm-bindgen-test under Node, then exercises the
+    # Vitest integration suite that imports the compiled output the way
+    # a real web build does.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: wasm
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Cargo check (no-default-features, wasm32)
+        # Catches the "someone reintroduced a non-wasm dep into
+        # ratchet-anchor's default path" failure mode before wasm-pack
+        # even starts.
+        run: cargo check -p solana-ratchet-anchor --no-default-features --target wasm32-unknown-unknown
+      - name: wasm-bindgen-test (node)
+        run: wasm-pack test --node crates/ratchet-wasm
+      - name: Web — install, typecheck, test, build
+        working-directory: web
+        env:
+          # npm install can set off postinstall scripts that check for
+          # ratchet on PATH and fail on CI. Skip any lifecycle scripts
+          # we don't explicitly need.
+          npm_config_fund: "false"
+          npm_config_audit: "false"
+        run: |
+          npm ci --no-audit --no-fund
+          npm run typecheck
+          npm run test
+          npm run build

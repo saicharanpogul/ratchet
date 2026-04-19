@@ -4,6 +4,7 @@
 //! and normalizes them into the `ratchet-core` intermediate representation.
 
 pub mod decode;
+#[cfg(feature = "rpc")]
 pub mod fetch;
 pub mod idl;
 pub mod load;
@@ -11,6 +12,7 @@ pub mod normalize;
 pub mod pda;
 
 pub use decode::{decode_idl_account, IDL_PREFIX_LEN};
+#[cfg(feature = "rpc")]
 pub use fetch::{fetch_account_data, fetch_idl_account, fetch_idl_for_program, Cluster};
 pub use idl::AnchorIdl;
 pub use load::{load_idl_from_file, load_idl_from_workspace};

@@ -12,6 +12,15 @@ rust-version.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
+[features]
+# `rpc` enables the JSON-RPC helpers (fetch_idl_account,
+# fetch_idl_for_program, fetch_account_data). Default on so existing
+# consumers see no behaviour change. Turn off — `default-features = false`
+# — when compiling for `wasm32-unknown-unknown` or any other target that
+# can't link sockets.
+default = ["rpc"]
+rpc = ["dep:ureq"]
+
 [dependencies]
 ratchet-core = { package = "solana-ratchet-core", path = "../ratchet-core", version = "0.2.0" }
 serde.workspace = true
@@ -20,6 +29,6 @@ anyhow.workspace = true
 sha2.workspace = true
 flate2.workspace = true
 base64.workspace = true
-ureq.workspace = true
 bs58.workspace = true
 curve25519-dalek.workspace = true
+ureq = { workspace = true, optional = true }

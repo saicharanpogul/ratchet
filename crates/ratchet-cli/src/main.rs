@@ -9,7 +9,10 @@ use ratchet_anchor::{
     fetch_account_data, fetch_idl_account, fetch_idl_for_program, load_idl_from_file, normalize,
     Cluster,
 };
-use ratchet_core::{check, default_rules, CheckContext, ProgramSurface, Report, Severity};
+use ratchet_core::{
+    check, default_preflight_rules, default_rules, preflight, CheckContext, ProgramSurface, Report,
+    Severity,
+};
 use ratchet_lock::{Lockfile, DEFAULT_FILENAME};
 use ratchet_source::parse_dir;
 use ratchet_squads::{decode_vault_transaction, ProposalKind};
@@ -34,6 +37,11 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Lint a single IDL for mainnet-readiness. Runs the P-series rules
+    /// (version fields, reserved padding, explicit discriminators,
+    /// name collisions, unsignered writes) on one program surface.
+    /// Use before first deploy; use `check-upgrade` for upgrades.
+    Readiness(ReadinessArgs),
     /// Compare a new program surface against the deployed one, a prior
     /// snapshot, or a committed `ratchet.lock`, and report every breaking
     /// or unsafe change.
@@ -147,6 +155,19 @@ struct ReplayArgs {
 }
 
 #[derive(Debug, Args)]
+struct ReadinessArgs {
+    /// Path to the IDL JSON to lint. Typically `target/idl/<program>.json`
+    /// from an Anchor build.
+    #[arg(long)]
+    new: PathBuf,
+
+    /// Acknowledge a P-rule finding and demote it to additive. Repeat
+    /// per flag: `--unsafe allow-no-version-field --unsafe allow-no-signer`.
+    #[arg(long = "unsafe", value_name = "FLAG")]
+    unsafes: Vec<String>,
+}
+
+#[derive(Debug, Args)]
 struct SquadsArgs {
     /// Squads V4 `VaultTransaction` account pubkey.
     #[arg(long)]
@@ -219,6 +240,7 @@ fn main() -> ExitCode {
 
 fn run(cli: Cli) -> Result<i32> {
     match cli.command {
+        Command::Readiness(args) => readiness(args, cli.json),
         Command::CheckUpgrade(args) => check_upgrade(args, cli.json),
         Command::Lock(args) => lock(args, cli.json),
         Command::Replay(args) => replay(args, cli.json),
@@ -226,6 +248,53 @@ fn run(cli: Cli) -> Result<i32> {
         Command::ListRules => {
             list_rules(cli.json);
             Ok(0)
+        }
+    }
+}
+
+fn readiness(args: ReadinessArgs, as_json: bool) -> Result<i32> {
+    let surface = normalize(&load_idl_from_file(&args.new)?)?;
+
+    let mut ctx = CheckContext::new();
+    for flag in &args.unsafes {
+        ctx = ctx.with_allow(flag.trim_start_matches("--"));
+    }
+
+    let rules = default_preflight_rules();
+    let report = preflight(&surface, &ctx, &rules);
+
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        render_readiness_human(&report, &surface.name);
+    }
+
+    Ok(report.exit_code())
+}
+
+fn render_readiness_human(report: &Report, program_name: &str) {
+    if report.findings.is_empty() {
+        println!(
+            "no readiness findings — `{program_name}` looks mainnet-shaped against the 6 P-rules"
+        );
+        return;
+    }
+
+    render_findings(report);
+    println!();
+    match report.max_severity() {
+        Some(Severity::Breaking) => {
+            println!(
+                "verdict: BREAKING — `{program_name}` has issues that will cause problems on mainnet"
+            );
+        }
+        Some(Severity::Unsafe) => {
+            println!(
+                "verdict: UNSAFE — `{program_name}` has future-upgrade concerns; review each finding and either fix or acknowledge with --unsafe <flag>"
+            );
+        }
+        Some(Severity::Additive) | None => {
+            println!("verdict: ready — only informational findings");
         }
     }
 }
@@ -670,12 +739,10 @@ fn augment_from_source(
     Ok(())
 }
 
-fn render_human(report: &Report) {
-    if report.findings.is_empty() {
-        println!("no findings — upgrade is safe");
-        return;
-    }
-
+/// Print every finding in the report. Caller is responsible for the
+/// verdict banner and any "no findings" message — that copy differs
+/// between `check-upgrade` and `readiness`.
+fn render_findings(report: &Report) {
     for f in &report.findings {
         let label = match f.severity {
             Severity::Breaking => "BREAKING",
@@ -702,7 +769,14 @@ fn render_human(report: &Report) {
             println!("          (acknowledge with --unsafe {flag})");
         }
     }
+}
 
+fn render_human(report: &Report) {
+    if report.findings.is_empty() {
+        println!("no findings — upgrade is safe");
+        return;
+    }
+    render_findings(report);
     println!();
     match report.max_severity() {
         Some(Severity::Breaking) => {

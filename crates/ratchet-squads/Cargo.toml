@@ -13,7 +13,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-ratchet-anchor = { package = "solana-ratchet-anchor", path = "../ratchet-anchor", version = "0.2.0" }
+ratchet-anchor = { package = "solana-ratchet-anchor", path = "../ratchet-anchor", version = "0.3.0" }
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true

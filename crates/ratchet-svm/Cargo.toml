@@ -20,8 +20,8 @@ default = []
 litesvm = ["dep:litesvm", "dep:solana-pubkey"]
 
 [dependencies]
-ratchet-core = { package = "solana-ratchet-core", path = "../ratchet-core", version = "0.2.0" }
-ratchet-anchor = { package = "solana-ratchet-anchor", path = "../ratchet-anchor", version = "0.2.0" }
+ratchet-core = { package = "solana-ratchet-core", path = "../ratchet-core", version = "0.3.0" }
+ratchet-anchor = { package = "solana-ratchet-anchor", path = "../ratchet-anchor", version = "0.3.0" }
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true

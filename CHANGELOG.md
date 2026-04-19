@@ -5,6 +5,69 @@ All notable changes to ratchet are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and ratchet adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-04-16
+
+The readiness release. Before this, ratchet only ran in diff mode —
+`old IDL vs new IDL`. That's the wrong question for a program that
+hasn't been deployed yet. 0.3.0 adds a single-IDL readiness lint so
+teams can check *mainnet-readiness* before the first deploy, not just
+upgrade-safety between versions.
+
+### Added
+- **Preflight engine** (`ratchet_core::preflight`) — runs a single
+  `ProgramSurface` through a rule set and returns a `Report`. Mirrors
+  the shape of the diff engine so allow-flags and severities work
+  identically across both modes.
+- **Six P-series readiness rules** (`P001`–`P006`):
+  - `P001 missing-version-field` — flags `#[account]` structs with no
+    `version: u8` (or equivalent) for future-migration routing.
+  - `P002 missing-reserved-padding` — flags accounts with no trailing
+    `_reserved` / `_padding` bytes, which blocks additive growth later.
+  - `P003 non-default-account-discriminator` — flags explicit
+    discriminators that differ from Anchor's canonical
+    `sha256("account:<Name>")[..8]`, since those can't be reproduced by
+    downstream IDL consumers.
+  - `P004 non-default-event-discriminator` — same check for events
+    (`sha256("event:<Name>")[..8]`).
+  - `P005 name-collision` — flags IDL types that share a name with
+    account structs, which corrupt Anchor's discriminator derivation.
+  - `P006 unsigned-writable-account` — flags writable accounts with no
+    signer on any instruction, the most common foot-gun for first-deploy
+    programs.
+- **`ratchet readiness` CLI subcommand** — `ratchet readiness --new
+  path/to/idl.json` runs preflight against one IDL and exits non-zero
+  on breaking findings. Shares output formatting (`--json`, human) with
+  `check-upgrade`.
+- **`check_readiness` WASM export** — single-IDL lint callable from
+  browsers. Used by the new `/readiness` page on the website.
+- **`/readiness` web page** — drop one IDL, get a `READY` / `CONCERNS`
+  / `BLOCKING` verdict banner plus a per-rule finding list.
+- **`SKILL.md` decision tree** — rewrites the AI-agent entry point so
+  agents ask the developer up-front: "first deploy or upgrade?" and
+  route to readiness vs check-upgrade accordingly. Readiness is now the
+  primary documented flow; check-upgrade is the upgrade-time mode.
+
+### Changed
+- `ratchet-anchor` now gates `ureq` (and therefore `Cluster` +
+  `fetch_idl_for_program`) behind the `rpc` feature. Default-on for
+  crates.io builds so existing CLI behaviour is unchanged; the web
+  build (`wasm32-unknown-unknown`) disables it to keep the wasm binary
+  free of native-only transitive deps.
+- `ratchet-source` detects `realloc = ...` on `Box<Account<'_, _>>`
+  wrappers and merges per-seed rather than overwriting, so a
+  partially-annotated program surface keeps the richer IDL-sourced
+  account when source parsing finds no seeds for a given slot.
+
+### Fixed
+- Two TypeScript typing tightenings in `web/lib/ratchet.ts` (implicit
+  `any` on a `catch` parameter, narrower return type on the init-cache
+  `Promise<void> | null`).
+- CI `typecheck` step now runs a `pretypecheck` that builds both
+  wasm-pack targets (`web`, `nodejs`) so tsc always sees up-to-date
+  `.d.ts` files.
+- `cargo fmt` diffs on multi-line Rust imports that exceeded the line
+  budget after the preflight module landed.
+
 ## [0.2.0] — 2026-04-19
 
 ### Added

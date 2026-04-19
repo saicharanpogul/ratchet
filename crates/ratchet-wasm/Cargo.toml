@@ -11,6 +11,9 @@ readme.workspace = true
 rust-version.workspace = true
 keywords.workspace = true
 categories.workspace = true
+# Internal crate — consumed by the web app via wasm-pack path dep, not
+# published to crates.io. Flip this when external Rust consumers need it.
+publish = false
 
 [lib]
 # cdylib is required for wasm-pack to emit the .wasm + JS glue.
@@ -21,8 +24,8 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # No default features — ureq and the fetch module drop out on wasm32.
-ratchet-core = { package = "solana-ratchet-core", path = "../ratchet-core", version = "0.2.0" }
-ratchet-anchor = { package = "solana-ratchet-anchor", path = "../ratchet-anchor", version = "0.2.0", default-features = false }
+ratchet-core = { package = "solana-ratchet-core", path = "../ratchet-core", version = "0.3.0" }
+ratchet-anchor = { package = "solana-ratchet-anchor", path = "../ratchet-anchor", version = "0.3.0", default-features = false }
 wasm-bindgen.workspace = true
 serde_json.workspace = true
 

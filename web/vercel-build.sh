@@ -20,19 +20,18 @@ if ! command -v wasm-pack >/dev/null 2>&1; then
   chmod +x "$BIN_DIR/wasm-pack"
 fi
 
-# wasm-pack drives `cargo build --target wasm32-unknown-unknown`
-# internally, so we also need a Rust toolchain with that target. Install
-# rustup minimal if cargo isn't already on PATH.
-if ! command -v cargo >/dev/null 2>&1; then
-  echo "Installing Rust toolchain via rustup"
+# wasm-pack drives `cargo build --target wasm32-unknown-unknown`, so we
+# need a Rust toolchain with that target. Vercel's build image ships a
+# system rustc at /rust/bin without rustup and without wasm32 support,
+# so force-install rustup and prepend it to PATH. rustup is a no-op if
+# already installed.
+if ! command -v rustup >/dev/null 2>&1; then
+  echo "Installing rustup (minimal + wasm32-unknown-unknown)"
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
     | sh -s -- -y --default-toolchain stable --profile minimal \
-                --target wasm32-unknown-unknown
-  # rustup writes an env shim at ~/.cargo/env.
-  if [ -f "$HOME/.cargo/env" ]; then
-    # shellcheck disable=SC1091
-    . "$HOME/.cargo/env"
-  fi
+                --target wasm32-unknown-unknown --no-modify-path
 fi
+export PATH="$HOME/.cargo/bin:$PATH"
+rustup target add wasm32-unknown-unknown 2>/dev/null || true
 
 npm run build

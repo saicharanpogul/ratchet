@@ -14,9 +14,7 @@
 //! `build:wasm` script for the canonical invocation).
 
 use ratchet_anchor::{normalize, AnchorIdl};
-use ratchet_core::{
-    check, default_preflight_rules, default_rules, preflight, CheckContext,
-};
+use ratchet_core::{check, default_preflight_rules, default_rules, preflight, CheckContext};
 use wasm_bindgen::prelude::*;
 
 /// Run the default rule set against two Anchor IDL JSON strings and
@@ -69,8 +67,7 @@ pub fn check_readiness(idl_json: &str) -> Result<String, JsError> {
 }
 
 pub(crate) fn check_readiness_inner(idl_json: &str) -> Result<String, String> {
-    let idl: AnchorIdl =
-        serde_json::from_str(idl_json).map_err(|e| format!("parsing IDL: {e}"))?;
+    let idl: AnchorIdl = serde_json::from_str(idl_json).map_err(|e| format!("parsing IDL: {e}"))?;
     let surface = normalize(&idl).map_err(|e| format!("normalizing IDL: {e:#}"))?;
     let ctx = CheckContext::new();
     let rules = default_preflight_rules();

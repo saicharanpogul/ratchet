@@ -1,32 +1,80 @@
 ---
 name: ratchet
-description: Check Solana program upgrades for breaking schema changes before they ship. Use when a user is upgrading an Anchor or native Solana program, preparing to sign a Squads multisig upgrade proposal, or reviewing a PR that touches `programs/` or `target/idl/` on a project that has live on-chain deployments. Catches silent data-corrupting changes — renamed struct discriminators, reordered fields, changed PDA seeds, and fourteen other rule categories — that `solana program upgrade` would happily land.
+description: Upgrade-safety checker for Solana programs. Two modes — (1) readiness lint on a single Anchor IDL ("is this program mainnet-ready?"), (2) upgrade diff against a deployed baseline ("will this upgrade break existing state?"). Use before first deploy, before every subsequent upgrade, or when reviewing a Squads proposal.
 homepage: https://github.com/saicharanpogul/ratchet
 ---
 
 # ratchet — agent skill
 
-ratchet is an upgrade-safety checker for Solana programs. It diffs a candidate program (local Anchor IDL) against a baseline (deployed on-chain IDL, committed lockfile, or a second IDL file) and classifies every change as **Additive** (safe), **Unsafe** (needs a declared migration), or **Breaking** (will corrupt on-chain state or break existing clients).
+ratchet answers two different questions about a Solana program, each with a different command.
 
-This skill tells an AI agent when to reach for ratchet, how to invoke it, how to read its output, and how to decide whether an upgrade is safe to ship.
+| Question | Command | When |
+|---|---|---|
+| "Is this program design mainnet-ready?" | `ratchet readiness --new <IDL>` | Before first deploy. Also useful when reviewing any new program design for future-upgrade hazards. |
+| "Will upgrading break existing state?" | `ratchet check-upgrade --new <IDL> …` | Before every upgrade after the program is live. Diffs the candidate against a baseline (lockfile, on-chain, or second file). |
 
-## When to invoke
+Before running anything, an AI agent should **ask the developer which mode they need** if it isn't obvious from context:
 
-Trigger ratchet when any of these hold:
+> "Are you preparing this program for its first mainnet deploy, or upgrading an existing deployment? If new, I'll run a **readiness** check. If upgrading, I'll run **check-upgrade** against your deployed baseline."
 
-- User says "is it safe to upgrade", "will this break my program", "can I ship this", "review this upgrade"
-- User mentions `anchor upgrade`, `anchor idl upgrade`, `solana program deploy`, `solana program write-buffer`, upgrade authority, Squads proposal
-- User is editing `#[account]`, `#[derive(Accounts)]`, `#[event]` structs in a live Anchor program
+Readiness is the more common entry point — most developers reach ratchet before their first deploy, not mid-upgrade. Default to readiness if the developer's answer is ambiguous, then follow up with check-upgrade once a baseline exists.
+
+## Triggers
+
+Invoke ratchet when any of these hold:
+
+- User says "is it safe to deploy", "is this mainnet-ready", "will my accounts break", "can I ship this", "review this program/upgrade"
+- User mentions `anchor deploy`, `anchor upgrade`, `anchor idl upgrade`, `solana program deploy`, `solana program write-buffer`, upgrade authority, Squads proposal
+- User is editing `#[account]`, `#[derive(Accounts)]`, `#[event]` structs
 - User added, removed, renamed, or reordered fields in any Anchor struct
-- User changed `#[account(seeds = [...])]` on an account that might already have live PDAs
+- User changed `#[account(seeds = [...])]` on an account
 - User is reviewing a pull request that modifies `programs/**/src/*.rs` or `target/idl/*.json`
 - User is about to approve a Squads V4 `VaultTransaction` that contains a BPF-loader-upgradeable `Upgrade` instruction
 
 Do NOT use ratchet when:
 
-- The program has never been deployed anywhere (nothing to compare against)
 - The program is intentionally immutable (`solana program --final` was run and nobody will upgrade it)
 - The work is purely off-chain (wallet, frontend, indexer, RPC client)
+
+## Readiness mode — `ratchet readiness`
+
+Single-IDL design lint. Runs six `PNNN` rules that flag patterns hurting future upgrades or deployment safety. Use this mode for **every pre-mainnet design review** — the findings tell you what to fix now so later upgrades are Additive instead of Breaking.
+
+```sh
+ratchet readiness --new target/idl/my_program.json
+# Optional: acknowledge a finding you've deliberately chosen
+ratchet readiness --new target/idl/my_program.json --unsafe allow-no-signer
+```
+
+### Preflight rules
+
+| ID | Name | Severity | What it flags |
+|---|---|---|---|
+| P001 | account-missing-version-field | Unsafe | No leading `version: u8` on an `#[account]`. Without it, future schema migrations can't branch on layout version at deserialize time. |
+| P002 | account-missing-reserved-padding | Unsafe | No trailing `_reserved: [u8; N]` padding. Every future field append becomes Unsafe (needs realloc or migration). |
+| P003 | account-missing-discriminator-pin | Additive | Account uses Anchor's default `sha256("account:<Name>")[..8]`. A rename would break R006 on upgrade. |
+| P004 | event-missing-discriminator-pin | Additive | Event uses the default. A rename desyncs every off-chain indexer. |
+| P005 | account-name-collision | Additive | Struct named `State`, `Config`, `Account`, `Token`, `Mint`, `System`, `Program`, `Data`, `Instruction`. Tool outputs become ambiguous. |
+| P006 | instruction-missing-signer | Unsafe | Instruction writes state but no account is a signer. Permissionless crank or missing auth? Ask the developer. |
+
+### How an agent should read readiness output
+
+- **Exit 0, no findings or only Additive**: Program is mainnet-ready shape-wise. Proceed to deploy.
+- **Exit 2, Unsafe findings**: Each finding has a real future-upgrade cost. For every one, decide:
+  - *Fix it now* (easy before deploy): add the version field, add reserved padding, pin the discriminator, add a signer slot, rename the struct. These changes are free pre-deploy and save you from Breaking findings later.
+  - *Acknowledge with `--unsafe <flag>`* (if deliberate): a permissionless crank that legitimately has no signer, a program that genuinely doesn't need versioning, etc. Document why.
+- **Exit 1, Breaking findings**: Currently no P-rule emits Breaking; if this happens it's a bug in ratchet — report it.
+
+### Mainnet-ready checklist an agent can narrate
+
+After running readiness, an agent can summarise the verdict as:
+
+- **Readiness**: [READY / CONCERNS / BLOCKING]
+- **Forward-compat hazards** (fields that won't migrate cleanly): P001, P002 findings
+- **Backward-compat hazards** (existing clients that might break after a rename): P003, P004 findings
+- **Immediate safety concerns**: P006 findings
+- **Cosmetic / tooling hygiene**: P005 findings
+- **Recommended fix list** with the exact `suggestion` text from each finding.
 
 ## Installation
 
@@ -48,7 +96,17 @@ The binary is called `ratchet`. Sub-crates publish under `solana-ratchet-*` on c
 
 All commands support `--json` for machine-parseable output. Exit codes: `0` safe, `1` breaking, `2` unsafe, `3` CLI error.
 
-### `ratchet check-upgrade` — the main verb
+### `ratchet readiness` — mainnet-readiness lint (single IDL)
+
+See the detailed section above. Short form:
+
+```sh
+ratchet readiness --new target/idl/my_program.json
+```
+
+No baseline needed — runs on the one IDL the developer points at.
+
+### `ratchet check-upgrade` — upgrade diff (two surfaces)
 
 Diff a candidate against a baseline and report findings.
 
@@ -118,6 +176,19 @@ Prints all 16 rules with one-line descriptions. Useful for writing release notes
 
 ## Rule catalog
 
+### Readiness rules (`readiness` mode)
+
+| ID | Name | Severity | Allow flag |
+|---|---|---|---|
+| P001 | account-missing-version-field | UNSAFE | `allow-no-version-field` |
+| P002 | account-missing-reserved-padding | UNSAFE | `allow-no-reserved-padding` |
+| P003 | account-missing-discriminator-pin | ADDITIVE | — (informational) |
+| P004 | event-missing-discriminator-pin | ADDITIVE | — (informational) |
+| P005 | account-name-collision | ADDITIVE | — (informational) |
+| P006 | instruction-missing-signer | UNSAFE | `allow-no-signer` |
+
+### Diff rules (`check-upgrade` mode)
+
 | ID | Name | Severity | Allow flag |
 |---|---|---|---|
 | R001 | account-field-reorder | BREAKING | — (no safe override) |
@@ -181,15 +252,26 @@ Do not `--unsafe` your way past these without reading the allow-flag note. Some 
 
 ## Common workflows
 
-### Set up a project for the first time
+### Pre-mainnet design review (readiness)
 
 ```sh
-# Once you have a deployed program
+ratchet readiness --new target/idl/my_program.json
+```
+
+Fix every Unsafe finding before you deploy. Adding a `version: u8`
+first field and a trailing `_reserved: [u8; N]` to every account
+is a 30-second change now and converts future field appends from
+Unsafe → Additive forever.
+
+### Lockfile baseline for ongoing upgrades
+
+```sh
+# Once deployed, snapshot the on-chain IDL as your baseline
 ratchet lock --program <PID> --cluster mainnet --out ratchet.lock
 git add ratchet.lock && git commit -m "snapshot pre-upgrade baseline"
 ```
 
-Add a GitHub workflow using `saicharanpogul/ratchet@main` (see `examples/github-workflow.yml`).
+Add a GitHub workflow using `saicharanpogul/ratchet@v0.2.0` (see `examples/github-workflow.yml`).
 
 ### Daily PR check
 

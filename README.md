@@ -1,5 +1,11 @@
 # ratchet
 
+[![CI](https://github.com/saicharanpogul/ratchet/actions/workflows/ci.yml/badge.svg)](https://github.com/saicharanpogul/ratchet/actions/workflows/ci.yml)
+[![solana-ratchet-cli on crates.io](https://img.shields.io/crates/v/solana-ratchet-cli.svg?label=solana-ratchet-cli)](https://crates.io/crates/solana-ratchet-cli)
+[![solana-ratchet-core on crates.io](https://img.shields.io/crates/v/solana-ratchet-core.svg?label=solana-ratchet-core)](https://crates.io/crates/solana-ratchet-core)
+[![docs.rs](https://img.shields.io/docsrs/solana-ratchet-core?label=docs.rs)](https://docs.rs/solana-ratchet-core)
+[![License: Apache-2.0](https://img.shields.io/crates/l/solana-ratchet-cli.svg)](LICENSE)
+
 Upgrade-safety checker for Solana programs.
 
 `ratchet` compares a new program surface against the deployed program on-chain (or a committed `ratchet.lock` baseline) and flags changes that would silently corrupt data, break clients, or orphan PDAs — before the upgrade transaction lands.

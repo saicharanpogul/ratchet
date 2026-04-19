@@ -7,12 +7,14 @@
 
 pub mod diagnostics;
 pub mod engine;
+pub mod preflight;
 pub mod rule;
 pub mod rules;
 pub mod surface;
 
 pub use diagnostics::{Finding, Path, Report, Severity};
 pub use engine::{check, default_rules};
+pub use preflight::{default_preflight_rules, preflight, PreflightRule};
 pub use rule::{CheckContext, Rule};
 pub use surface::{
     AccountDef, AccountInput, ArgDef, Discriminator, EnumVariant, EnumVariantFields, ErrorDef,

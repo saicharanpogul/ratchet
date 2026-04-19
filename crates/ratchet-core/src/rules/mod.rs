@@ -6,6 +6,8 @@
 
 use crate::rule::Rule;
 
+pub mod preflight;
+
 pub mod r001_account_field_reorder;
 pub mod r002_account_field_retype;
 pub mod r003_account_field_removed;

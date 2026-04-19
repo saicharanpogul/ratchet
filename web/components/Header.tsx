@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { version as ratchetVersion } from "../lib/ratchet-wasm/package.json";
 
 export function Header() {
   return (
@@ -10,7 +11,7 @@ export function Header() {
             ratchet
           </span>
           <span className="chip chip-additive text-[10px] tracking-widest">
-            v0.1
+            v{ratchetVersion}
           </span>
         </Link>
         <nav className="flex items-center gap-5 text-sm text-[var(--color-muted)]">

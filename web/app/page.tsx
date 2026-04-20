@@ -18,20 +18,21 @@ function Hero() {
       <div className="flex flex-col items-start gap-6 max-w-3xl">
         <span className="chip">
           <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent-green)]" />
-          upgrade-safety for Solana programs
+          readiness + upgrade safety for Solana programs
         </span>
         <h1 className="text-5xl md:text-6xl font-semibold tracking-tight leading-[1.05]">
-          Catch breaking changes{" "}
-          <span className="text-[var(--color-accent-purple)]">before</span>{" "}
-          <span className="italic">solana program upgrade</span>{" "}
-          lets them through.
+          Is your Solana program{" "}
+          <span className="text-[var(--color-accent-purple)]">ready</span>{" "}
+          for mainnet — and ready to scale?
         </h1>
         <p className="text-lg text-[var(--color-muted)] max-w-2xl leading-relaxed">
-          ratchet diffs a candidate Anchor IDL against the deployed program (or
-          a committed <code className="mono text-[var(--color-foreground)]">ratchet.lock</code> baseline)
-          and classifies every change as additive, unsafe, or breaking — with
-          the specific field, discriminator, or PDA seed that would corrupt
-          existing state.
+          ratchet lints one Anchor IDL for the traps that bite after launch —
+          missing <code className="mono text-[var(--color-foreground)]">version</code>{" "}
+          fields, reserved padding, unstable discriminators, unsigned writes.
+        </p>
+        <p className="text-sm text-[var(--color-dim)] max-w-2xl leading-relaxed">
+          Already deployed? It also diffs old vs new IDL and flags every change
+          that would corrupt on-chain state.
         </p>
         <div className="flex flex-wrap gap-3 pt-2">
           <Link

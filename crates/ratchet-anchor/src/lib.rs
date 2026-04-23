@@ -20,7 +20,6 @@ pub use normalize::{
     default_account_discriminator, default_event_discriminator, default_instruction_discriminator,
     normalize,
 };
-pub use pda::{
-    anchor_idl_address, create_with_seed, decode_pubkey, encode_pubkey, find_program_address,
-    is_on_curve, ANCHOR_IDL_SEED,
-};
+#[cfg(feature = "rpc")]
+pub use pda::{anchor_idl_address, find_program_address, is_on_curve};
+pub use pda::{create_with_seed, decode_pubkey, encode_pubkey, ANCHOR_IDL_SEED};

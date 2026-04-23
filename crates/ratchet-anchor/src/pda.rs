@@ -14,6 +14,7 @@
 //! `idl = create_with_seed(&base, "anchor:idl", program_id)`.
 
 use anyhow::{bail, Context, Result};
+#[cfg(feature = "rpc")]
 use curve25519_dalek::edwards::CompressedEdwardsY;
 use sha2::{Digest, Sha256};
 
@@ -21,7 +22,10 @@ use sha2::{Digest, Sha256};
 pub const ANCHOR_IDL_SEED: &str = "anchor:idl";
 
 /// Fixed suffix appended by the runtime when deriving a PDA. Mirrors
-/// `solana_program`'s `PDA_MARKER`.
+/// `solana_program`'s `PDA_MARKER`. Only used inside `find_program_address`,
+/// which is `rpc`-gated, so keep the constant gated too to silence
+/// dead-code warnings on no-default-features builds.
+#[cfg(feature = "rpc")]
 const PDA_MARKER: &[u8] = b"ProgramDerivedAddress";
 
 /// Maximum length of a single seed passed to `find_program_address`. The
@@ -52,6 +56,12 @@ pub fn encode_pubkey(bytes: &[u8; 32]) -> String {
 /// True when `bytes` is a valid Ed25519 compressed point. PDAs are
 /// defined as the *off-curve* siblings of the curve — addresses that
 /// cannot correspond to any private key.
+///
+/// Gated behind the `rpc` feature because the only in-tree caller is
+/// `fetch_idl_for_program`, which is itself `rpc`-gated. External
+/// consumers that only need IDL normalisation (wasm, `qedgen`) can
+/// skip `curve25519-dalek` and its `fiat-crypto` sub-tree entirely.
+#[cfg(feature = "rpc")]
 pub fn is_on_curve(bytes: &[u8; 32]) -> bool {
     CompressedEdwardsY::from_slice(bytes)
         .ok()
@@ -64,6 +74,9 @@ pub fn is_on_curve(bytes: &[u8; 32]) -> bool {
 /// Returns `(address, bump)` where `bump` is the highest value in 0..=255
 /// that produced an off-curve hash. Panics only if no bump in that range
 /// yields an off-curve point, which is astronomically unlikely.
+///
+/// `rpc`-gated for the same reason as [`is_on_curve`].
+#[cfg(feature = "rpc")]
 pub fn find_program_address(seeds: &[&[u8]], program_id: &[u8; 32]) -> ([u8; 32], u8) {
     for seed in seeds {
         assert!(
@@ -103,6 +116,10 @@ pub fn create_with_seed(base: &[u8; 32], seed: &str, owner: &[u8; 32]) -> [u8; 3
 /// 1. `base = find_program_address(&[], program_id).0` — an off-curve
 ///    authority owned by the program.
 /// 2. `idl = create_with_seed(&base, "anchor:idl", program_id)`.
+///
+/// `rpc`-gated because step 1 needs `find_program_address`, which in
+/// turn needs `curve25519-dalek`.
+#[cfg(feature = "rpc")]
 pub fn anchor_idl_address(program_id: &[u8; 32]) -> [u8; 32] {
     let (base, _bump) = find_program_address(&[], program_id);
     create_with_seed(&base, ANCHOR_IDL_SEED, program_id)
@@ -131,6 +148,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rpc")]
     fn find_program_address_is_deterministic() {
         let program_id = decode_pubkey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap();
         let (addr1, bump1) = find_program_address(&[b"vault"], &program_id);
@@ -140,6 +158,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rpc")]
     fn find_program_address_returns_off_curve() {
         let program_id = decode_pubkey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap();
         let (addr, _bump) = find_program_address(&[b"anchor", b"test"], &program_id);
@@ -147,6 +166,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rpc")]
     fn is_on_curve_accepts_known_onchain_pubkey() {
         // The System Program id is a known on-curve pubkey.
         let system = decode_pubkey("11111111111111111111111111111111").unwrap();
@@ -154,6 +174,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rpc")]
     fn anchor_idl_address_is_deterministic_and_distinct_from_program() {
         let program_id = decode_pubkey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap();
         let idl_a = anchor_idl_address(&program_id);
@@ -163,6 +184,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "rpc")]
     fn different_programs_have_different_idl_addresses() {
         let a = decode_pubkey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap();
         let b = decode_pubkey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL").unwrap();

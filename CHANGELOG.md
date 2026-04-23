@@ -5,6 +5,27 @@ All notable changes to ratchet are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and ratchet adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] — 2026-04-24
+
+Slimmer dependency surface for library consumers.
+
+### Changed
+- `ratchet-anchor`: `curve25519-dalek` is now gated behind the `rpc`
+  feature. `is_on_curve`, `find_program_address`, and
+  `anchor_idl_address` (the three curve-dependent helpers) move with it;
+  they were only called from the already-`rpc`-gated
+  `fetch_idl_for_program`, so no behavioural change for default builds.
+  Consumers with `default-features = false` — wasm builds, `qedgen`, any
+  lint-only integration that reads IDLs from disk — now drop
+  `curve25519-dalek` and its `fiat-crypto` sub-tree entirely.
+  `decode_pubkey` / `encode_pubkey` / `create_with_seed` /
+  `ANCHOR_IDL_SEED` stay unconditional.
+
+### Workspace
+- Version bump across all eight crates for dep-pin alignment. No source
+  changes in `ratchet-core`, `ratchet-lock`, `ratchet-quasar`,
+  `ratchet-source`, `ratchet-squads`, `ratchet-svm`, or `ratchet-cli`.
+
 ## [0.3.0] — 2026-04-16
 
 The readiness release. Before this, ratchet only ran in diff mode —

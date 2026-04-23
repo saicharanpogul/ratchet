@@ -13,7 +13,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-ratchet-core = { package = "solana-ratchet-core", path = "../ratchet-core", version = "0.3.0" }
+ratchet-core = { package = "solana-ratchet-core", path = "../ratchet-core", version = "0.3.1" }
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true

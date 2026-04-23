@@ -14,15 +14,19 @@ categories.workspace = true
 
 [features]
 # `rpc` enables the JSON-RPC helpers (fetch_idl_account,
-# fetch_idl_for_program, fetch_account_data). Default on so existing
-# consumers see no behaviour change. Turn off — `default-features = false`
-# — when compiling for `wasm32-unknown-unknown` or any other target that
-# can't link sockets.
+# fetch_idl_for_program, fetch_account_data) *and* the PDA derivation
+# helpers that fetch uses internally (`find_program_address`,
+# `is_on_curve`, `anchor_idl_address`). Default on so existing consumers
+# see no behaviour change. Turn off — `default-features = false` — when
+# compiling for `wasm32-unknown-unknown` or any other target that can't
+# link sockets. curve25519-dalek (and its `fiat-crypto` sub-tree) drops
+# out with it, which matters for consumers like `qedgen` that only need
+# the IDL normalisation path.
 default = ["rpc"]
-rpc = ["dep:ureq"]
+rpc = ["dep:ureq", "dep:curve25519-dalek"]
 
 [dependencies]
-ratchet-core = { package = "solana-ratchet-core", path = "../ratchet-core", version = "0.3.0" }
+ratchet-core = { package = "solana-ratchet-core", path = "../ratchet-core", version = "0.3.1" }
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
@@ -30,5 +34,5 @@ sha2.workspace = true
 flate2.workspace = true
 base64.workspace = true
 bs58.workspace = true
-curve25519-dalek.workspace = true
+curve25519-dalek = { workspace = true, optional = true }
 ureq = { workspace = true, optional = true }

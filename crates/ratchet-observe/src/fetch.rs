@@ -125,12 +125,22 @@ pub fn signatures_within_window(
 /// Batch-fetch transactions for every signature, returning them in the
 /// same order. Uses JSON-RPC's native batch format so we pay one round
 /// trip per [`TX_BATCH`] signatures.
+///
+/// `pace_ms` introduces a fixed sleep between batches so sustained
+/// pulls stay under paid-tier method-rate ceilings. First batch fires
+/// immediately; every subsequent batch waits `pace_ms` before firing.
 pub fn fetch_transactions(
     cluster: &Cluster,
     sigs: &[SignatureInfo],
+    pace_ms: u64,
 ) -> Result<Vec<RawTransaction>, FetchError> {
     let mut out = Vec::<RawTransaction>::with_capacity(sigs.len());
-    for chunk in sigs.chunks(TX_BATCH) {
+    for (batch_idx, chunk) in sigs.chunks(TX_BATCH).enumerate() {
+        // Pace between batches. No delay before the first one —
+        // fast-return on small sample sizes still feels snappy.
+        if batch_idx > 0 && pace_ms > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(pace_ms));
+        }
         let batch: Vec<Value> = chunk
             .iter()
             .enumerate()

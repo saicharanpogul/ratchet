@@ -247,6 +247,15 @@ struct ObserveArgs {
     #[arg(long)]
     account_counts: bool,
 
+    /// Milliseconds to sleep between batched `getTransaction` calls.
+    /// Defaults to 250ms which keeps a Helius Developer-tier paid key
+    /// under the per-second method-credit ceiling. Crank up (e.g.
+    /// 1000) for free tiers, or drop to 0 on a private RPC where
+    /// throughput isn't rate-limited. If you see 429 warnings in the
+    /// output, this is the knob.
+    #[arg(long = "pace-ms", value_name = "MS", default_value_t = 250)]
+    pace_ms: u64,
+
     /// Fail (exit 1) when any ix's error rate exceeds this percentage.
     /// Accepts a float: `--alert-error-rate 5` == 5%.
     #[arg(long = "alert-error-rate", value_name = "PCT")]
@@ -932,6 +941,7 @@ fn observe(args: ObserveArgs, as_json: bool) -> Result<i32> {
         limit: args.limit,
         idl_override,
         include_account_counts: args.account_counts,
+        pace_ms: args.pace_ms,
     };
 
     let alert_config = ratchet_observe::AlertConfig {

@@ -65,6 +65,15 @@ pub struct ObserveOpts {
     /// default because `getProgramAccounts` is expensive and often
     /// rate-limited on free RPC tiers — callers must opt in.
     pub include_account_counts: bool,
+    /// Milliseconds to sleep between batched `getTransaction` calls.
+    /// Most paid RPC tiers count each method in a JSON-RPC batch
+    /// against a per-second credit budget; pacing keeps sustained
+    /// pulls below the ceiling without requiring caller-side math.
+    ///
+    /// Default 250ms matches Helius Developer at 50-wide batches;
+    /// set to 0 to disable, or raise for free tiers and crank
+    /// higher for `Business+` when you know what you're doing.
+    pub pace_ms: u64,
 }
 
 impl Default for ObserveOpts {
@@ -75,6 +84,7 @@ impl Default for ObserveOpts {
             limit: 1000,
             idl_override: None,
             include_account_counts: false,
+            pace_ms: 250,
         }
     }
 }
@@ -111,7 +121,8 @@ pub fn observe(cluster: &Cluster, opts: &ObserveOpts) -> anyhow::Result<ObserveR
     let sigs = fetch::signatures_within_window(cluster, opts)
         .context("fetching transaction signatures")?;
 
-    let txs = fetch::fetch_transactions(cluster, &sigs).context("fetching transactions")?;
+    let txs =
+        fetch::fetch_transactions(cluster, &sigs, opts.pace_ms).context("fetching transactions")?;
 
     let decoded = decode::decode_all(&idl, &txs);
     let mut report = aggregate::summarise(opts, &idl, decoded);

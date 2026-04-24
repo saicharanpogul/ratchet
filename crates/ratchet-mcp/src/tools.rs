@@ -200,6 +200,11 @@ fn observe_program(args: Value) -> Result<Value> {
         limit: a.limit,
         idl_override,
         include_account_counts: a.include_account_counts,
+        // MCP callers stay on the library default (250ms) — the tool
+        // schema doesn't expose a pacing knob yet. Agent-driven runs
+        // tend to use smaller limits anyway, so the default is rarely
+        // load-bearing here.
+        pace_ms: ObserveOpts::default().pace_ms,
     };
     let report: ObserveReport = ratchet_observe::observe(&cluster, &opts)?;
     Ok(serde_json::to_value(&report)?)

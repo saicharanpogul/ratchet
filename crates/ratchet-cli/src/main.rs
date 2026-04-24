@@ -234,6 +234,36 @@ struct ObserveArgs {
     /// build.
     #[arg(long)]
     idl: Option<PathBuf>,
+
+    /// Also run `getProgramAccounts` per account type in the IDL and
+    /// report per-type counts. Off by default because the RPC call is
+    /// expensive and often rate-limited on free tiers.
+    #[arg(long)]
+    account_counts: bool,
+
+    /// Fail (exit 1) when any ix's error rate exceeds this percentage.
+    /// Accepts a float: `--alert-error-rate 5` == 5%.
+    #[arg(long = "alert-error-rate", value_name = "PCT")]
+    alert_error_rate: Option<f64>,
+
+    /// Limit `--alert-error-rate` to a single ix (optional). When
+    /// omitted, the threshold applies to every ix in the report.
+    #[arg(long = "alert-error-rate-ix", value_name = "IX")]
+    alert_error_rate_ix: Option<String>,
+
+    /// Fail when the observed tx count in the window drops below this
+    /// floor — outage / dropped-traffic detection.
+    #[arg(long = "alert-min-tx", value_name = "N")]
+    alert_min_tx: Option<usize>,
+
+    /// Fail when any ix's CU p99 exceeds this value. Catches
+    /// post-deploy efficiency regressions.
+    #[arg(long = "alert-cu-p99", value_name = "CU")]
+    alert_cu_p99: Option<u64>,
+
+    /// Limit `--alert-cu-p99` to a single ix.
+    #[arg(long = "alert-cu-p99-ix", value_name = "IX")]
+    alert_cu_p99_ix: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -848,17 +878,48 @@ fn observe(args: ObserveArgs, as_json: bool) -> Result<i32> {
         window_seconds,
         limit: args.limit,
         idl_override,
+        include_account_counts: args.account_counts,
+    };
+
+    let alert_config = ratchet_observe::AlertConfig {
+        max_error_rate_pct: args.alert_error_rate,
+        error_rate_ix: args.alert_error_rate_ix.clone(),
+        min_tx_count: args.alert_min_tx,
+        max_cu_p99: args.alert_cu_p99,
+        cu_p99_ix: args.alert_cu_p99_ix.clone(),
     };
 
     let report = ratchet_observe::observe(&cluster, &opts)
         .with_context(|| format!("observing program {}", args.program))?;
+    let breaches = ratchet_observe::evaluate_alerts(&report, &alert_config);
 
     if as_json {
-        println!("{}", serde_json::to_string_pretty(&report)?);
+        // Include breaches alongside the report so JSON consumers don't
+        // have to correlate exit codes with stderr.
+        let envelope = serde_json::json!({
+            "report": report,
+            "alerts": breaches,
+        });
+        println!("{}", serde_json::to_string_pretty(&envelope)?);
     } else {
         render_observe_human(&report, cluster.url());
+        if !breaches.is_empty() {
+            render_alert_breaches(&breaches);
+        }
     }
-    Ok(0)
+
+    // Exit 1 on any alert breach — same convention `check-upgrade`
+    // uses when it finds a breaking change. Exit 0 otherwise.
+    Ok(if breaches.is_empty() { 0 } else { 1 })
+}
+
+fn render_alert_breaches(breaches: &[ratchet_observe::AlertBreach]) {
+    println!();
+    println!("Alerts");
+    println!("────────────────────────────────────────────────────────────────────");
+    for b in breaches {
+        println!("[{}] {}", b.rule, b.message);
+    }
 }
 
 /// Parse a `24h` / `7d` / `30m` / `600s` duration into seconds. Accepts
@@ -971,6 +1032,47 @@ fn render_observe_human(report: &ratchet_observe::ObserveReport, cluster_url: &s
             }
             println!("    sig:   {}", f.signature);
         }
+    }
+
+    if let Some(hist) = &report.upgrade_history {
+        println!();
+        println!("Upgrade history");
+        println!("────────────────────────────────────────────────────────────────────");
+        let auth = hist.authority.as_deref().unwrap_or("<immutable>");
+        println!("authority:    {}", auth);
+        if let Some(slot) = hist.last_deploy_slot {
+            println!("last slot:    {}", slot);
+        }
+        if let Some(ts) = hist.last_deploy_time {
+            println!("last deploy:  {}", fmt_relative_time(ts));
+        }
+    }
+
+    if !report.account_counts.is_empty() {
+        println!();
+        println!("Accounts");
+        println!("────────────────────────────────────────────────────────────────────");
+        for a in &report.account_counts {
+            println!("{:<24} {:>8}", a.name, a.count);
+        }
+    }
+}
+
+fn fmt_relative_time(unix_seconds: i64) -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let diff = now.saturating_sub(unix_seconds);
+    if diff < 60 {
+        format!("{diff}s ago")
+    } else if diff < 60 * 60 {
+        format!("{}m ago", diff / 60)
+    } else if diff < 60 * 60 * 24 {
+        format!("{}h ago", diff / (60 * 60))
+    } else {
+        format!("{}d ago", diff / (60 * 60 * 24))
     }
 }
 

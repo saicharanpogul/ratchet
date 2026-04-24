@@ -175,6 +175,75 @@ pub fn fetch_transactions(
     Ok(out)
 }
 
+/// Fetch raw account data (base64-decoded) for `pubkey`. Returns
+/// `Ok(None)` when the account does not exist, distinguishing that
+/// case from network / shape errors.
+pub fn fetch_account_bytes(cluster: &Cluster, pubkey: &str) -> Result<Option<Vec<u8>>, FetchError> {
+    use base64::prelude::{Engine as _, BASE64_STANDARD};
+
+    let params = json!([
+        pubkey,
+        { "encoding": "base64", "commitment": "confirmed" }
+    ]);
+    let result = rpc_call(cluster, "getAccountInfo", params)?;
+    let value = result.get("value").cloned().unwrap_or(Value::Null);
+    if value.is_null() {
+        return Ok(None);
+    }
+    let data = value
+        .get("data")
+        .and_then(|d| d.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|s| s.as_str())
+        .ok_or_else(|| FetchError::Shape("getAccountInfo.data[0] missing".into()))?;
+    let bytes = BASE64_STANDARD
+        .decode(data)
+        .map_err(|e| FetchError::Shape(format!("base64 decode: {e}")))?;
+    Ok(Some(bytes))
+}
+
+/// Resolve a slot to its wall-clock timestamp. Returns `Ok(None)` when
+/// the slot has been pruned from the RPC's block history (common on
+/// older slots; stock Solana RPC only keeps ~150k).
+pub fn fetch_block_time(cluster: &Cluster, slot: u64) -> Result<Option<i64>, FetchError> {
+    let params = json!([slot]);
+    let result = rpc_call(cluster, "getBlockTime", params)?;
+    Ok(result.as_i64())
+}
+
+/// Count accounts owned by `program_id` whose first 8 bytes match the
+/// given discriminator. Uses `dataSlice { length: 0 }` so the RPC
+/// returns pubkey-only rows — the actual account data never crosses
+/// the wire, which keeps the call fast enough to run across an IDL's
+/// entire account catalog.
+///
+/// Large programs on free RPC tiers often have `getProgramAccounts`
+/// rate-limited or disabled; callers are expected to guard this
+/// behind a flag and tell their users to use a paid tier if needed.
+pub fn count_accounts_by_discriminator(
+    cluster: &Cluster,
+    program_id: &str,
+    discriminator: &[u8; 8],
+) -> Result<u64, FetchError> {
+    let disc_b58 = bs58::encode(discriminator).into_string();
+    let params = json!([
+        program_id,
+        {
+            "encoding": "base64",
+            "commitment": "confirmed",
+            "dataSlice": { "offset": 0, "length": 0 },
+            "filters": [
+                { "memcmp": { "offset": 0, "bytes": disc_b58 } }
+            ]
+        }
+    ]);
+    let result = rpc_call(cluster, "getProgramAccounts", params)?;
+    let arr = result
+        .as_array()
+        .ok_or_else(|| FetchError::Shape("getProgramAccounts expected array".into()))?;
+    Ok(arr.len() as u64)
+}
+
 /// Execute a single JSON-RPC call and return the `result` payload.
 fn rpc_call(cluster: &Cluster, method: &str, params: Value) -> Result<Value, FetchError> {
     let body = json!({

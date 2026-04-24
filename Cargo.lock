@@ -3625,10 +3625,12 @@ name = "solana-ratchet-observe"
 version = "0.3.1"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "bs58",
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "solana-ratchet-anchor",
  "solana-ratchet-core",
  "thiserror 2.0.18",

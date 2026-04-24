@@ -45,8 +45,16 @@ pub struct DecodedTx {
 /// `"jsonParsed"` encoding. We deliberately take a minimal slice of
 /// the response — Solana tx JSON is huge and most fields don't matter
 /// to us.
+///
+/// `signature` never comes back from the RPC at this level
+/// (`getTransaction` omits it; the actual signatures live under
+/// `transaction.signatures[]`). We already know the signature from
+/// the request that fetched this tx — `fetch::fetch_transactions`
+/// copies it in after deserialisation. The `#[serde(default)]` keeps
+/// deserialisation from failing on the missing field.
 #[derive(Debug, Clone, Deserialize)]
 pub struct RawTransaction {
+    #[serde(default)]
     pub signature: String,
     #[serde(rename = "blockTime")]
     pub block_time: Option<i64>,

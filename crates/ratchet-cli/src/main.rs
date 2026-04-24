@@ -927,11 +927,20 @@ fn observe(args: ObserveArgs, as_json: bool) -> Result<i32> {
     let window_seconds = parse_duration(&args.window)
         .with_context(|| format!("parsing --since {:?}", args.window))?;
 
+    // Long-running modes re-observe on a loop. Resolve the IDL once up
+    // front so cycles don't re-hit the on-chain IDL account on every
+    // refresh — the IDL only changes on a program upgrade, which we
+    // already surface via the upgrade-history panel.
+    let is_long_running = args.watch.is_some() || args.ui;
     let idl_override =
         match &args.idl {
             Some(path) => Some(load_idl_from_file(path).with_context(|| {
                 format!("loading --idl from {} (fallback path)", path.display())
             })?),
+            None if is_long_running => Some(
+                ratchet_anchor::fetch_idl_for_program(&cluster, &args.program)
+                    .with_context(|| format!("fetching IDL for {}", args.program))?,
+            ),
             None => None,
         };
 
@@ -962,6 +971,11 @@ fn observe(args: ObserveArgs, as_json: bool) -> Result<i32> {
 
     let export_html = args.export_html.clone();
 
+    // Take a reference to the pre-fetched IDL for the engine paths.
+    // The stateless `observe()` path still reads `opts.idl_override`
+    // internally so one-shot runs are unaffected.
+    let engine_idl = opts.idl_override.clone();
+
     if args.ui {
         let addr: std::net::SocketAddr = args
             .ui_addr
@@ -977,6 +991,7 @@ fn observe(args: ObserveArgs, as_json: bool) -> Result<i32> {
             alert_config,
             store,
             export_html,
+            engine_idl,
             addr,
             interval_secs,
         );
@@ -995,11 +1010,12 @@ fn observe(args: ObserveArgs, as_json: bool) -> Result<i32> {
             let interval_secs = parse_duration(interval)
                 .with_context(|| format!("parsing --watch {interval:?}"))?;
             observe_watch(
-                &cluster,
-                &opts,
-                &alert_config,
-                store.as_ref(),
-                export_html.as_deref(),
+                cluster,
+                opts,
+                alert_config,
+                store,
+                export_html,
+                engine_idl,
                 interval_secs,
                 as_json,
             )
@@ -1012,12 +1028,14 @@ fn observe(args: ObserveArgs, as_json: bool) -> Result<i32> {
 /// process structure small — no tokio runtime needed). Returns only
 /// when the server exits (Ctrl-C / upstream kill), so the exit code
 /// is effectively 0 on clean shutdown.
+#[allow(clippy::too_many_arguments)] // internal handler; see observe_watch.
 fn observe_ui(
     cluster: Cluster,
     opts: ratchet_observe::ObserveOpts,
     alert_config: ratchet_observe::AlertConfig,
     store: Option<ratchet_observe::store::Store>,
     export_html: Option<PathBuf>,
+    idl: Option<ratchet_anchor::AnchorIdl>,
     addr: std::net::SocketAddr,
     interval_seconds: u64,
 ) -> Result<i32> {
@@ -1025,14 +1043,25 @@ fn observe_ui(
     use std::thread;
     use std::time::Duration;
 
-    // First observation blocks the server start — better a 2-second
-    // wait at launch than a blank dashboard on first paint.
+    let store = store.ok_or_else(|| {
+        anyhow::anyhow!("--ui requires a store; pass --db <path> or set $HOME for the default")
+    })?;
+    let idl = idl.ok_or_else(|| {
+        anyhow::anyhow!(
+            "--ui requires a resolvable IDL; either pass --idl <path> or ensure the program \
+             has published its IDL on-chain so it can be auto-fetched once at startup"
+        )
+    })?;
+    let engine = ratchet_observe::ObserveEngine::new(store, opts.program_id.clone());
+
+    // Prime observation — blocks the server start so first paint is
+    // data, not a blank dashboard. Goes through the engine too, so
+    // the tx-cache populates for subsequent cycles.
     eprintln!("ratchet observe --ui: priming first observation...");
-    let initial = ratchet_observe::observe(&cluster, &opts)
+    let initial = engine
+        .observe(&cluster, &idl, &opts)
         .with_context(|| format!("priming observation for {}", opts.program_id))?;
-    if let Some(s) = &store {
-        let _ = s.insert(&initial, i64_now());
-    }
+    let _ = engine.store().insert(&initial, i64_now());
     if let Some(path) = &export_html {
         if let Err(e) = write_html_export(path, &initial) {
             eprintln!("warn: initial html export failed: {e:#}");
@@ -1043,33 +1072,31 @@ fn observe_ui(
     let worker_slot = Arc::clone(&slot);
     // Silence the stderr progress frames on background cycles — the
     // prime run already showed them during initial load, and in UI
-    // mode the user is watching the browser, not the terminal. A
-    // continuously-updating progress line from every watch cycle
-    // competes with whatever else they're doing in that shell.
+    // mode the user is watching the browser, not the terminal.
     let worker_opts = ratchet_observe::ObserveOpts {
         show_progress: false,
-        ..opts.clone()
+        ..opts
     };
     let worker_cluster = cluster.clone();
-    let worker_alert = alert_config.clone();
-    let worker_store_is_some = store.is_some();
-    let worker_store = store;
+    let worker_alert = alert_config;
     let worker_export = export_html;
+    let worker_idl = idl;
+    // Engine moves into the worker; the main thread only keeps the
+    // Arc<RwLock<ObserveReport>> slot so HTTP handlers can read the
+    // latest report. Store access stays single-threaded inside the
+    // engine — avoids shipping a Sync wrapper over rusqlite.
+    let worker_engine = engine;
 
     thread::spawn(move || loop {
         thread::sleep(Duration::from_secs(interval_seconds));
-        match ratchet_observe::observe(&worker_cluster, &worker_opts) {
+        match worker_engine.observe(&worker_cluster, &worker_idl, &worker_opts) {
             Ok(report) => {
                 let breaches = ratchet_observe::evaluate_alerts(&report, &worker_alert);
                 for b in &breaches {
                     eprintln!("alert [{}] {}", b.rule, b.message);
                 }
-                if worker_store_is_some {
-                    if let Some(s) = &worker_store {
-                        if let Err(e) = s.insert(&report, i64_now()) {
-                            eprintln!("warn: store insert failed: {e:#}");
-                        }
-                    }
+                if let Err(e) = worker_engine.store().insert(&report, i64_now()) {
+                    eprintln!("warn: store insert failed: {e:#}");
                 }
                 if let Some(path) = &worker_export {
                     if let Err(e) = write_html_export(path, &report) {
@@ -1160,21 +1187,32 @@ fn observe_one_shot(
     Ok(if breaches.is_empty() { 0 } else { 1 })
 }
 
+#[allow(clippy::too_many_arguments)] // internal handler; all params are
+// narrowly scoped and lifted from the top-level observe() dispatch.
 fn observe_watch(
-    cluster: &Cluster,
-    opts: &ratchet_observe::ObserveOpts,
-    alert_config: &ratchet_observe::AlertConfig,
-    store: Option<&ratchet_observe::store::Store>,
-    export_html: Option<&std::path::Path>,
+    cluster: Cluster,
+    opts: ratchet_observe::ObserveOpts,
+    alert_config: ratchet_observe::AlertConfig,
+    store: Option<ratchet_observe::store::Store>,
+    export_html: Option<PathBuf>,
+    idl: Option<ratchet_anchor::AnchorIdl>,
     interval_seconds: u64,
     as_json: bool,
 ) -> Result<i32> {
-    // Watch semantically requires a store: the delta-vs-previous column
-    // is what makes the loop interesting. Keep the `:memory:` fallback
-    // for dry-run / test use; persistent store is the normal path.
+    // Watch requires a store for both the Δ-since-last summary AND
+    // the incremental tx-cache that keeps cycles cheap. Engine-free
+    // fallback is gone — the one-shot handler covers stateless
+    // consumers.
     let store = store.ok_or_else(|| {
         anyhow::anyhow!("--watch requires a store; pass --db <path> or set $HOME for the default")
     })?;
+    let idl = idl.ok_or_else(|| {
+        anyhow::anyhow!(
+            "--watch requires a resolvable IDL; either pass --idl <path> or ensure the program \
+             has published its IDL on-chain so it can be auto-fetched once at startup"
+        )
+    })?;
+    let engine = ratchet_observe::ObserveEngine::new(store, opts.program_id.clone());
 
     eprintln!(
         "ratchet observe --watch {}: press Ctrl-C to stop",
@@ -1182,12 +1220,13 @@ fn observe_watch(
     );
     let mut cycle = 0u64;
     loop {
-        let previous = store
+        let previous = engine
+            .store()
             .latest_before(&opts.program_id, i64_now())
             .ok()
             .flatten();
 
-        let report = match ratchet_observe::observe(cluster, opts) {
+        let report = match engine.observe(&cluster, &idl, &opts) {
             Ok(r) => r,
             Err(e) => {
                 eprintln!("warn: observe cycle {cycle} failed: {e:#}");
@@ -1196,12 +1235,12 @@ fn observe_watch(
                 continue;
             }
         };
-        let breaches = ratchet_observe::evaluate_alerts(&report, alert_config);
-        if let Err(e) = store.insert(&report, i64_now()) {
+        let breaches = ratchet_observe::evaluate_alerts(&report, &alert_config);
+        if let Err(e) = engine.store().insert(&report, i64_now()) {
             eprintln!("warn: store insert failed: {e:#}");
         }
 
-        if let Some(path) = export_html {
+        if let Some(path) = &export_html {
             if let Err(e) = write_html_export(path, &report) {
                 eprintln!("warn: html export failed: {e:#}");
             }

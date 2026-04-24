@@ -70,6 +70,18 @@ pub fn signatures_within_window(
     cluster: &Cluster,
     opts: &ObserveOpts,
 ) -> Result<Vec<SignatureInfo>, FetchError> {
+    signatures_within_window_until(cluster, opts, None)
+}
+
+/// Same as [`signatures_within_window`] but accepts an `until_sig`
+/// watermark — the RPC stops once it reaches that signature
+/// (exclusive). Used by the incremental engine on every cycle after
+/// the first: fetch only what's newer than the cache.
+pub fn signatures_within_window_until(
+    cluster: &Cluster,
+    opts: &ObserveOpts,
+    until_sig: Option<&str>,
+) -> Result<Vec<SignatureInfo>, FetchError> {
     let cutoff = now_seconds().saturating_sub(opts.window_seconds as i64);
     let mut collected = Vec::<SignatureInfo>::with_capacity(opts.limit.min(SIG_BATCH));
     let mut before: Option<String> = None;
@@ -85,6 +97,9 @@ pub fn signatures_within_window(
         filter.insert("limit".into(), json!(remaining));
         if let Some(b) = &before {
             filter.insert("before".into(), json!(b));
+        }
+        if let Some(u) = until_sig {
+            filter.insert("until".into(), json!(u));
         }
         params.push(Value::Object(filter));
 

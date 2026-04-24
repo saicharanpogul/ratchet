@@ -29,6 +29,8 @@
 pub mod aggregate;
 pub mod alert;
 pub mod decode;
+#[cfg(all(feature = "rpc", feature = "store"))]
+pub mod engine;
 pub mod export;
 #[cfg(feature = "rpc")]
 pub mod fetch;
@@ -42,6 +44,8 @@ pub mod upgrade;
 
 pub use aggregate::{ErrorBucket, IxMetrics, RecentFailure};
 pub use alert::{evaluate as evaluate_alerts, AlertBreach, AlertConfig};
+#[cfg(all(feature = "rpc", feature = "store"))]
+pub use engine::ObserveEngine;
 pub use export::render_html;
 pub use redact::{redact_error_message, redact_rpc_url};
 pub use report::{AccountCount, ObserveReport, ObserveWindow, UpgradeHistory};

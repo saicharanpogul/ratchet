@@ -62,6 +62,11 @@ enum Command {
     /// failures with decoded account inputs. The third lens after
     /// `readiness` (pre-deploy) and `check-upgrade` (pre-release).
     Observe(ObserveArgs),
+    /// Start a Model Context Protocol server on stdio. Exposes every
+    /// ratchet capability (readiness, check-upgrade, observe, rule
+    /// catalogs) as MCP tools so an agent — Claude Code, Cursor,
+    /// Windsurf, any MCP-aware client — can drive ratchet directly.
+    Mcp,
     /// List every registered rule with its one-line description.
     ListRules,
 }
@@ -353,6 +358,14 @@ fn run(cli: Cli) -> Result<i32> {
         Command::Replay(args) => replay(args, cli.json),
         Command::Squads(args) => squads(args, cli.json),
         Command::Observe(args) => observe(args, cli.json),
+        Command::Mcp => {
+            // The MCP server owns stdin+stdout — cli.json is meaningless
+            // here. Log banner to stderr so the protocol stream stays
+            // parseable.
+            eprintln!("ratchet mcp: serving on stdio");
+            ratchet_mcp::run(std::io::stdin().lock(), std::io::stdout().lock())?;
+            Ok(0)
+        }
         Command::ListRules => {
             list_rules(cli.json);
             Ok(0)

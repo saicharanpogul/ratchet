@@ -10,6 +10,7 @@ members = [
     "crates/ratchet-squads",
     "crates/ratchet-wasm",
     "crates/ratchet-observe",
+    "crates/ratchet-mcp",
     "crates/ratchet-cli",
 ]
 

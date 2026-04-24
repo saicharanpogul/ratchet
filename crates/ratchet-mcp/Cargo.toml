@@ -1,0 +1,25 @@
+[package]
+name = "solana-ratchet-mcp"
+description = "Model Context Protocol server exposing ratchet (readiness, check-upgrade, observe) as tools agents can call"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+# Every tool this server exposes lowers to an existing ratchet crate —
+# we don't duplicate lint / observe logic here, just the MCP wire
+# protocol and argument plumbing.
+ratchet-core = { package = "solana-ratchet-core", path = "../ratchet-core", version = "0.3.1" }
+ratchet-anchor = { package = "solana-ratchet-anchor", path = "../ratchet-anchor", version = "0.3.1" }
+ratchet-observe = { package = "solana-ratchet-observe", path = "../ratchet-observe", version = "0.3.1", default-features = false, features = ["rpc"] }
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

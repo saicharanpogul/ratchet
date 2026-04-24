@@ -3607,6 +3607,7 @@ dependencies = [
  "solana-ratchet-anchor",
  "solana-ratchet-core",
  "solana-ratchet-lock",
+ "solana-ratchet-mcp",
  "solana-ratchet-observe",
  "solana-ratchet-source",
  "solana-ratchet-squads",
@@ -3630,6 +3631,19 @@ dependencies = [
  "serde",
  "serde_json",
  "solana-ratchet-core",
+]
+
+[[package]]
+name = "solana-ratchet-mcp"
+version = "0.3.1"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "solana-ratchet-anchor",
+ "solana-ratchet-core",
+ "solana-ratchet-observe",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

@@ -278,6 +278,13 @@ struct ObserveArgs {
     /// delta against the previous in-process snapshot).
     #[arg(long, value_name = "PATH")]
     db: Option<PathBuf>,
+
+    /// Also write a self-contained HTML report to this path. Static,
+    /// single file, no external fetches at render time — safe to
+    /// attach to a PR description or share in Slack. Runs alongside
+    /// the normal human / JSON output.
+    #[arg(long = "export-html", value_name = "PATH")]
+    export_html: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -905,8 +912,17 @@ fn observe(args: ObserveArgs, as_json: bool) -> Result<i32> {
 
     let store = observe_store(&args)?;
 
+    let export_html = args.export_html.clone();
+
     match &args.watch {
-        None => observe_one_shot(&cluster, &opts, &alert_config, store.as_ref(), as_json),
+        None => observe_one_shot(
+            &cluster,
+            &opts,
+            &alert_config,
+            store.as_ref(),
+            export_html.as_deref(),
+            as_json,
+        ),
         Some(interval) => {
             let interval_secs = parse_duration(interval)
                 .with_context(|| format!("parsing --watch {interval:?}"))?;
@@ -915,6 +931,7 @@ fn observe(args: ObserveArgs, as_json: bool) -> Result<i32> {
                 &opts,
                 &alert_config,
                 store.as_ref(),
+                export_html.as_deref(),
                 interval_secs,
                 as_json,
             )
@@ -963,6 +980,7 @@ fn observe_one_shot(
     opts: &ratchet_observe::ObserveOpts,
     alert_config: &ratchet_observe::AlertConfig,
     store: Option<&ratchet_observe::store::Store>,
+    export_html: Option<&std::path::Path>,
     as_json: bool,
 ) -> Result<i32> {
     let previous = store.and_then(|s| s.latest_before(&opts.program_id, i64_now()).ok().flatten());
@@ -974,6 +992,10 @@ fn observe_one_shot(
         if let Err(e) = s.insert(&report, i64_now()) {
             eprintln!("warn: store insert failed: {e:#}");
         }
+    }
+
+    if let Some(path) = export_html {
+        write_html_export(path, &report)?;
     }
 
     emit_observe_result(
@@ -992,6 +1014,7 @@ fn observe_watch(
     opts: &ratchet_observe::ObserveOpts,
     alert_config: &ratchet_observe::AlertConfig,
     store: Option<&ratchet_observe::store::Store>,
+    export_html: Option<&std::path::Path>,
     interval_seconds: u64,
     as_json: bool,
 ) -> Result<i32> {
@@ -1027,6 +1050,12 @@ fn observe_watch(
             eprintln!("warn: store insert failed: {e:#}");
         }
 
+        if let Some(path) = export_html {
+            if let Err(e) = write_html_export(path, &report) {
+                eprintln!("warn: html export failed: {e:#}");
+            }
+        }
+
         emit_observe_result(
             cluster.url(),
             &report,
@@ -1038,6 +1067,21 @@ fn observe_watch(
         cycle += 1;
         std::thread::sleep(std::time::Duration::from_secs(interval_seconds));
     }
+}
+
+fn write_html_export(
+    path: &std::path::Path,
+    report: &ratchet_observe::ObserveReport,
+) -> Result<()> {
+    let html = ratchet_observe::render_html(report).context("rendering HTML export")?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating export parent directory {}", parent.display()))?;
+    }
+    std::fs::write(path, html)
+        .with_context(|| format!("writing HTML export to {}", path.display()))?;
+    eprintln!("ratchet observe: wrote {}", path.display());
+    Ok(())
 }
 
 fn emit_observe_result(

@@ -23,6 +23,11 @@ rpc = ["dep:ureq", "ratchet-anchor/rpc"]
 # mode + historical comparison. Off by default so a one-shot `observe`
 # run has zero filesystem footprint.
 store = ["dep:rusqlite"]
+# `ui` lights up an embedded HTTP server on localhost that re-uses the
+# HTML export template with a `/api/report` polling hook. Off by
+# default so the core CLI keeps a small dep tree — hosted deployments
+# and `ratchet observe --ui` turn this on.
+ui = ["dep:tiny_http"]
 
 [dependencies]
 ratchet-core = { package = "solana-ratchet-core", path = "../ratchet-core", version = "0.3.1" }
@@ -36,6 +41,7 @@ base64.workspace = true
 sha2.workspace = true
 ureq = { workspace = true, optional = true }
 rusqlite = { version = "0.32", features = ["bundled"], optional = true }
+tiny_http = { version = "0.12", optional = true }
 
 [dev-dependencies]
 # End-to-end tests mock the JSON-RPC layer with canned responses, so

@@ -35,6 +35,8 @@ pub mod fetch;
 pub mod report;
 #[cfg(feature = "store")]
 pub mod store;
+#[cfg(feature = "ui")]
+pub mod ui;
 pub mod upgrade;
 
 pub use aggregate::{ErrorBucket, IxMetrics, RecentFailure};

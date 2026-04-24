@@ -261,6 +261,31 @@
       host.appendChild(tr);
     }
   }
+
+  // Live-refresh hook — `ratchet observe --ui` exposes `/api/report`.
+  // The static export has no server and this block 404s; fetch swallows
+  // that and the page stays on its embedded snapshot. In live mode,
+  // rebuild the DOM on every successful poll so a tab left open updates
+  // itself without a manual reload.
+  if (window.location.protocol.startsWith("http")) {
+    const poll = async () => {
+      try {
+        const r = await fetch("/api/report");
+        if (!r.ok) return;
+        const next = await r.json();
+        document.getElementById("report-json").textContent = JSON.stringify(next);
+        // Wipe the sections we rebuild; static labels stay put.
+        for (const id of ["instructions", "errors", "failures", "upgrade", "accounts"]) {
+          const el = document.getElementById(id);
+          if (el) el.innerHTML = "";
+        }
+        document.getElementById("upgrade-section").style.display = "none";
+        document.getElementById("accounts-section").style.display = "none";
+        location.reload();
+      } catch (_) { /* transient — try again next tick */ }
+    };
+    setInterval(poll, 15_000);
+  }
 })();
 </script>
 </body>

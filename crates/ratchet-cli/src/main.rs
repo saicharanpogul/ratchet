@@ -285,6 +285,24 @@ struct ObserveArgs {
     /// the normal human / JSON output.
     #[arg(long = "export-html", value_name = "PATH")]
     export_html: Option<PathBuf>,
+
+    /// Serve a live dashboard on localhost. Pairs naturally with
+    /// `--watch`: the background thread re-runs the observation on
+    /// the watch interval and the page auto-polls `/api/report`.
+    /// Default bind address `127.0.0.1:8787`.
+    #[arg(long)]
+    ui: bool,
+
+    /// Override the UI bind address. Set to `0.0.0.0:8787` for
+    /// self-hosted deployments where you want the dashboard
+    /// reachable over the network. Be deliberate — no auth is
+    /// shipped, so exposing it to the internet is on you.
+    #[arg(
+        long = "ui-addr",
+        value_name = "ADDR",
+        default_value = "127.0.0.1:8787"
+    )]
+    ui_addr: String,
 }
 
 #[derive(Debug, Args)]
@@ -914,6 +932,26 @@ fn observe(args: ObserveArgs, as_json: bool) -> Result<i32> {
 
     let export_html = args.export_html.clone();
 
+    if args.ui {
+        let addr: std::net::SocketAddr = args
+            .ui_addr
+            .parse()
+            .with_context(|| format!("parsing --ui-addr {:?}", args.ui_addr))?;
+        let interval_secs = match &args.watch {
+            Some(i) => parse_duration(i).with_context(|| format!("parsing --watch {i:?}"))?,
+            None => 60, // sensible default for a live dashboard
+        };
+        return observe_ui(
+            cluster,
+            opts,
+            alert_config,
+            store,
+            export_html,
+            addr,
+            interval_secs,
+        );
+    }
+
     match &args.watch {
         None => observe_one_shot(
             &cluster,
@@ -937,6 +975,79 @@ fn observe(args: ObserveArgs, as_json: bool) -> Result<i32> {
             )
         }
     }
+}
+
+/// Serve a live dashboard. Runs the observe loop on a background
+/// thread so the HTTP server can block on the main thread (keeps the
+/// process structure small — no tokio runtime needed). Returns only
+/// when the server exits (Ctrl-C / upstream kill), so the exit code
+/// is effectively 0 on clean shutdown.
+fn observe_ui(
+    cluster: Cluster,
+    opts: ratchet_observe::ObserveOpts,
+    alert_config: ratchet_observe::AlertConfig,
+    store: Option<ratchet_observe::store::Store>,
+    export_html: Option<PathBuf>,
+    addr: std::net::SocketAddr,
+    interval_seconds: u64,
+) -> Result<i32> {
+    use std::sync::{Arc, RwLock};
+    use std::thread;
+    use std::time::Duration;
+
+    // First observation blocks the server start — better a 2-second
+    // wait at launch than a blank dashboard on first paint.
+    eprintln!("ratchet observe --ui: priming first observation...");
+    let initial = ratchet_observe::observe(&cluster, &opts)
+        .with_context(|| format!("priming observation for {}", opts.program_id))?;
+    if let Some(s) = &store {
+        let _ = s.insert(&initial, i64_now());
+    }
+    if let Some(path) = &export_html {
+        if let Err(e) = write_html_export(path, &initial) {
+            eprintln!("warn: initial html export failed: {e:#}");
+        }
+    }
+
+    let slot: ratchet_observe::ui::ReportSlot = Arc::new(RwLock::new(initial));
+    let worker_slot = Arc::clone(&slot);
+    let worker_opts = opts.clone();
+    let worker_cluster = cluster.clone();
+    let worker_alert = alert_config.clone();
+    let worker_store_is_some = store.is_some();
+    let worker_store = store;
+    let worker_export = export_html;
+
+    thread::spawn(move || loop {
+        thread::sleep(Duration::from_secs(interval_seconds));
+        match ratchet_observe::observe(&worker_cluster, &worker_opts) {
+            Ok(report) => {
+                let breaches = ratchet_observe::evaluate_alerts(&report, &worker_alert);
+                for b in &breaches {
+                    eprintln!("alert [{}] {}", b.rule, b.message);
+                }
+                if worker_store_is_some {
+                    if let Some(s) = &worker_store {
+                        if let Err(e) = s.insert(&report, i64_now()) {
+                            eprintln!("warn: store insert failed: {e:#}");
+                        }
+                    }
+                }
+                if let Some(path) = &worker_export {
+                    if let Err(e) = write_html_export(path, &report) {
+                        eprintln!("warn: html export failed: {e:#}");
+                    }
+                }
+                if let Ok(mut slot) = worker_slot.write() {
+                    *slot = report;
+                }
+            }
+            Err(e) => eprintln!("warn: observation failed: {e:#}"),
+        }
+    });
+
+    ratchet_observe::ui::serve(addr, slot)?;
+    Ok(0)
 }
 
 fn observe_store(args: &ObserveArgs) -> Result<Option<ratchet_observe::store::Store>> {

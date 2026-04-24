@@ -1041,7 +1041,15 @@ fn observe_ui(
 
     let slot: ratchet_observe::ui::ReportSlot = Arc::new(RwLock::new(initial));
     let worker_slot = Arc::clone(&slot);
-    let worker_opts = opts.clone();
+    // Silence the stderr progress frames on background cycles — the
+    // prime run already showed them during initial load, and in UI
+    // mode the user is watching the browser, not the terminal. A
+    // continuously-updating progress line from every watch cycle
+    // competes with whatever else they're doing in that shell.
+    let worker_opts = ratchet_observe::ObserveOpts {
+        show_progress: false,
+        ..opts.clone()
+    };
     let worker_cluster = cluster.clone();
     let worker_alert = alert_config.clone();
     let worker_store_is_some = store.is_some();
@@ -1098,13 +1106,15 @@ fn observe_store(args: &ObserveArgs) -> Result<Option<ratchet_observe::store::St
 }
 
 /// Default snapshot path unless the dev overrides with `--db`.
-/// Watch mode always wants persistence; one-shot runs only open a
-/// store when explicitly asked.
+/// Watch mode and UI mode both want persistence automatically —
+/// watch for the Δ-since-last summary, UI so the first dashboard
+/// refresh has a baseline to diff against. One-shot runs stay
+/// zero-filesystem-footprint unless the dev opts in.
 fn resolve_store_path(args: &ObserveArgs) -> Result<Option<PathBuf>> {
     if let Some(p) = &args.db {
         return Ok(Some(p.clone()));
     }
-    if args.watch.is_some() {
+    if args.watch.is_some() || args.ui {
         let home = std::env::var_os("HOME")
             .ok_or_else(|| anyhow::anyhow!("$HOME not set; pass --db explicitly"))?;
         let mut path = PathBuf::from(home);

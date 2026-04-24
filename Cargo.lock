@@ -3595,6 +3595,7 @@ dependencies = [
  "solana-ratchet-anchor",
  "solana-ratchet-core",
  "solana-ratchet-lock",
+ "solana-ratchet-observe",
  "solana-ratchet-source",
  "solana-ratchet-squads",
  "solana-ratchet-svm",

@@ -57,6 +57,11 @@ enum Command {
     /// account, classifies it (program upgrade / set-authority / other),
     /// and lists referenced pubkeys for signer triage.
     Squads(SquadsArgs),
+    /// Observe a deployed program over a time window: per-instruction
+    /// success rate + error distribution, CU percentiles, recent
+    /// failures with decoded account inputs. The third lens after
+    /// `readiness` (pre-deploy) and `check-upgrade` (pre-release).
+    Observe(ObserveArgs),
     /// List every registered rule with its one-line description.
     ListRules,
 }
@@ -199,6 +204,39 @@ struct SquadsArgs {
 }
 
 #[derive(Debug, Args)]
+struct ObserveArgs {
+    /// Base58 program id to observe.
+    #[arg(long)]
+    program: String,
+
+    /// Cluster shorthand (mainnet, devnet, testnet) or a full RPC URL.
+    /// Helius / QuickNode URLs with a tier-appropriate API key produce
+    /// the fastest results; stock public endpoints will work but may
+    /// rate-limit on high-volume programs. The docs in the README call
+    /// out when to reach for a paid tier.
+    #[arg(long, default_value = "mainnet")]
+    cluster: String,
+
+    /// Time window to cover, as a `24h` / `7d` / `30m` string. Default
+    /// 24h.
+    #[arg(long = "since", default_value = "24h")]
+    window: String,
+
+    /// Cap transactions fetched. Guards against unbounded RPC cost on
+    /// very busy programs — raise when your program's throughput
+    /// justifies it. Default 1000.
+    #[arg(long, default_value_t = 1000)]
+    limit: usize,
+
+    /// Path to a local IDL JSON to use instead of fetching from the
+    /// program's on-chain IDL account. Useful when the program hasn't
+    /// published its IDL on-chain, or when iterating against a local
+    /// build.
+    #[arg(long)]
+    idl: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
 struct LockArgs {
     /// Source IDL path.
     #[arg(long, group = "source")]
@@ -245,6 +283,7 @@ fn run(cli: Cli) -> Result<i32> {
         Command::Lock(args) => lock(args, cli.json),
         Command::Replay(args) => replay(args, cli.json),
         Command::Squads(args) => squads(args, cli.json),
+        Command::Observe(args) => observe(args, cli.json),
         Command::ListRules => {
             list_rules(cli.json);
             Ok(0)
@@ -788,5 +827,192 @@ fn render_human(report: &Report) {
         Some(Severity::Additive) | None => {
             println!("verdict: safe");
         }
+    }
+}
+
+fn observe(args: ObserveArgs, as_json: bool) -> Result<i32> {
+    let cluster = Cluster::parse(&args.cluster);
+    let window_seconds = parse_duration(&args.window)
+        .with_context(|| format!("parsing --since {:?}", args.window))?;
+
+    let idl_override =
+        match &args.idl {
+            Some(path) => Some(load_idl_from_file(path).with_context(|| {
+                format!("loading --idl from {} (fallback path)", path.display())
+            })?),
+            None => None,
+        };
+
+    let opts = ratchet_observe::ObserveOpts {
+        program_id: args.program.clone(),
+        window_seconds,
+        limit: args.limit,
+        idl_override,
+    };
+
+    let report = ratchet_observe::observe(&cluster, &opts)
+        .with_context(|| format!("observing program {}", args.program))?;
+
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        render_observe_human(&report, cluster.url());
+    }
+    Ok(0)
+}
+
+/// Parse a `24h` / `7d` / `30m` / `600s` duration into seconds. Accepts
+/// a bare integer as seconds for explicit callers. The set of suffixes
+/// is deliberately small so CI pipelines don't accidentally get cute.
+fn parse_duration(s: &str) -> Result<u64> {
+    let s = s.trim();
+    if s.is_empty() {
+        bail!("empty duration");
+    }
+    let (num, unit) = match s.chars().last().unwrap() {
+        c if c.is_ascii_digit() => (s, "s"),
+        'h' | 'd' | 'm' | 's' => s.split_at(s.len() - 1),
+        other => bail!("unknown duration unit {other:?} (use h/d/m/s)"),
+    };
+    let n: u64 = num
+        .parse()
+        .with_context(|| format!("parsing numeric part of duration {s:?}"))?;
+    let secs = match unit {
+        "s" | "" => n,
+        "m" => n * 60,
+        "h" => n * 60 * 60,
+        "d" => n * 60 * 60 * 24,
+        _ => bail!("unreachable unit"),
+    };
+    Ok(secs)
+}
+
+fn render_observe_human(report: &ratchet_observe::ObserveReport, cluster_url: &str) {
+    let name = report.program_name.as_deref().unwrap_or("<unnamed>");
+    println!("ratchet observe — {}", name);
+    println!("PID:      {}", report.program_id);
+    println!("cluster:  {}", cluster_url);
+    println!(
+        "window:   {}  ({} transactions)",
+        fmt_seconds(report.window.seconds),
+        report.window.tx_count
+    );
+    println!();
+
+    if report.instructions.is_empty() {
+        println!("No instructions decoded in window. The program may not have seen");
+        println!("traffic from this account, or the IDL's instruction discriminators");
+        println!("don't match any of the observed transactions.");
+        return;
+    }
+
+    println!("Instructions");
+    println!("────────────────────────────────────────────────────────────────────");
+    println!(
+        "{:<20} {:>8} {:>8}   {:>8}   {:>8}   {:>6}",
+        "ix", "count", "✓ %", "CU p50", "CU p99", "errors"
+    );
+    for ix in &report.instructions {
+        let rate = ix
+            .success_rate
+            .map(|r| format!("{:>6.1}%", r * 100.0))
+            .unwrap_or_else(|| "    — ".into());
+        let p50 = ix
+            .cu_p50
+            .map(|v| format!("{v:>8}"))
+            .unwrap_or_else(|| "       —".into());
+        let p99 = ix
+            .cu_p99
+            .map(|v| format!("{v:>8}"))
+            .unwrap_or_else(|| "       —".into());
+        println!(
+            "{:<20} {:>8} {:>8}   {}   {}   {:>6}",
+            ix.name, ix.count, rate, p50, p99, ix.error_count
+        );
+    }
+
+    if !report.errors.is_empty() {
+        println!();
+        println!("Errors");
+        println!("────────────────────────────────────────────────────────────────────");
+        for e in &report.errors {
+            let label = e
+                .name
+                .as_deref()
+                .map(|n| format!("{n} (0x{:04x})", e.code))
+                .unwrap_or_else(|| format!("0x{:04x}", e.code));
+            let from = if e.ix_names.is_empty() {
+                String::from("(unknown ix)")
+            } else {
+                format!("from: {}", e.ix_names.join(", "))
+            };
+            println!("{:<36} {:>5}   {}", label, e.count, from);
+        }
+    }
+
+    if !report.recent_failures.is_empty() {
+        println!();
+        println!("Recent failures");
+        println!("────────────────────────────────────────────────────────────────────");
+        for f in &report.recent_failures {
+            let ix = f.ix_name.as_deref().unwrap_or("<unknown ix>");
+            let err = f
+                .error_name
+                .as_deref()
+                .map(|n| format!("{n} (0x{:04x})", f.error_code.unwrap_or(0)))
+                .unwrap_or_else(|| {
+                    f.error_code
+                        .map(|c| format!("0x{c:04x}"))
+                        .unwrap_or_else(|| "<unresolved>".into())
+                });
+            println!("{}  →  {}", ix, err);
+            if let Some(fp) = &f.fee_payer {
+                println!("    user:  {}", fp);
+            }
+            println!("    sig:   {}", f.signature);
+        }
+    }
+}
+
+fn fmt_seconds(s: u64) -> String {
+    if s % (60 * 60 * 24) == 0 {
+        format!("{}d", s / (60 * 60 * 24))
+    } else if s % (60 * 60) == 0 {
+        format!("{}h", s / (60 * 60))
+    } else if s % 60 == 0 {
+        format!("{}m", s / 60)
+    } else {
+        format!("{s}s")
+    }
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+
+    #[test]
+    fn parse_duration_accepts_all_units() {
+        assert_eq!(parse_duration("30s").unwrap(), 30);
+        assert_eq!(parse_duration("10m").unwrap(), 600);
+        assert_eq!(parse_duration("24h").unwrap(), 86_400);
+        assert_eq!(parse_duration("7d").unwrap(), 7 * 86_400);
+    }
+
+    #[test]
+    fn parse_duration_accepts_bare_seconds() {
+        assert_eq!(parse_duration("600").unwrap(), 600);
+    }
+
+    #[test]
+    fn parse_duration_rejects_unknown_unit() {
+        assert!(parse_duration("5y").is_err());
+    }
+
+    #[test]
+    fn fmt_seconds_picks_sensible_unit() {
+        assert_eq!(fmt_seconds(86_400), "1d");
+        assert_eq!(fmt_seconds(3600), "1h");
+        assert_eq!(fmt_seconds(600), "10m");
+        assert_eq!(fmt_seconds(45), "45s");
     }
 }

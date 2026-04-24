@@ -23,6 +23,7 @@ ratchet-lock = { package = "solana-ratchet-lock", path = "../ratchet-lock", vers
 ratchet-source = { package = "solana-ratchet-source", path = "../ratchet-source", version = "0.3.1" }
 ratchet-svm = { package = "solana-ratchet-svm", path = "../ratchet-svm", version = "0.3.1" }
 ratchet-squads = { package = "solana-ratchet-squads", path = "../ratchet-squads", version = "0.3.1" }
+ratchet-observe = { package = "solana-ratchet-observe", path = "../ratchet-observe", version = "0.3.1" }
 anyhow.workspace = true
 clap.workspace = true
 serde.workspace = true

@@ -74,6 +74,11 @@ pub struct ObserveOpts {
     /// set to 0 to disable, or raise for free tiers and crank
     /// higher for `Business+` when you know what you're doing.
     pub pace_ms: u64,
+    /// Emit progress updates to stderr during the fetch phases (sig
+    /// pagination + tx batches). Off by default so the library stays
+    /// silent for programmatic consumers (MCP, hosted dashboards);
+    /// the CLI flips it on for human output and off for `--json`.
+    pub show_progress: bool,
 }
 
 impl Default for ObserveOpts {
@@ -85,6 +90,7 @@ impl Default for ObserveOpts {
             idl_override: None,
             include_account_counts: false,
             pace_ms: 250,
+            show_progress: false,
         }
     }
 }
@@ -121,8 +127,8 @@ pub fn observe(cluster: &Cluster, opts: &ObserveOpts) -> anyhow::Result<ObserveR
     let sigs = fetch::signatures_within_window(cluster, opts)
         .context("fetching transaction signatures")?;
 
-    let txs =
-        fetch::fetch_transactions(cluster, &sigs, opts.pace_ms).context("fetching transactions")?;
+    let txs = fetch::fetch_transactions(cluster, &sigs, opts.pace_ms, opts.show_progress)
+        .context("fetching transactions")?;
 
     let decoded = decode::decode_all(&idl, &txs);
     let mut report = aggregate::summarise(opts, &idl, decoded);

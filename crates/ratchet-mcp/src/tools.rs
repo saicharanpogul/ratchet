@@ -205,6 +205,9 @@ fn observe_program(args: Value) -> Result<Value> {
         // tend to use smaller limits anyway, so the default is rarely
         // load-bearing here.
         pace_ms: ObserveOpts::default().pace_ms,
+        // MCP is silent — stderr frames would corrupt the JSON-RPC
+        // stream on stdout if an agent mis-read them.
+        show_progress: false,
     };
     let report: ObserveReport = ratchet_observe::observe(&cluster, &opts)?;
     Ok(serde_json::to_value(&report)?)

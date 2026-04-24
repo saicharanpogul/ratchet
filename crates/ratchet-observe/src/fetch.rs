@@ -17,6 +17,7 @@
 //! the failure modes legible.
 
 use std::collections::HashSet;
+use std::io::{IsTerminal, Write};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub use ratchet_anchor::fetch::Cluster;
@@ -110,6 +111,9 @@ pub fn signatures_within_window(
             seen.insert(info.signature.clone());
             collected.push(info);
         }
+        if opts.show_progress {
+            print_progress("signatures", collected.len(), opts.limit);
+        }
         if page_ended_outside_window {
             break;
         }
@@ -117,6 +121,11 @@ pub fn signatures_within_window(
             Some(b) => before = Some(b),
             None => break,
         }
+    }
+    if opts.show_progress {
+        // Lock the final value in so the next phase's banner doesn't
+        // overwrite a half-drawn progress line.
+        finish_progress();
     }
 
     Ok(collected)
@@ -133,6 +142,7 @@ pub fn fetch_transactions(
     cluster: &Cluster,
     sigs: &[SignatureInfo],
     pace_ms: u64,
+    show_progress: bool,
 ) -> Result<Vec<RawTransaction>, FetchError> {
     let mut out = Vec::<RawTransaction>::with_capacity(sigs.len());
     for (batch_idx, chunk) in sigs.chunks(TX_BATCH).enumerate() {
@@ -140,6 +150,9 @@ pub fn fetch_transactions(
         // fast-return on small sample sizes still feels snappy.
         if batch_idx > 0 && pace_ms > 0 {
             std::thread::sleep(std::time::Duration::from_millis(pace_ms));
+        }
+        if show_progress {
+            print_progress("transactions", out.len(), sigs.len());
         }
         let batch: Vec<Value> = chunk
             .iter()
@@ -181,6 +194,10 @@ pub fn fetch_transactions(
             tx.signature = info.signature.clone();
             out.push(tx);
         }
+    }
+    if show_progress {
+        print_progress("transactions", out.len(), sigs.len());
+        finish_progress();
     }
     Ok(out)
 }
@@ -329,6 +346,37 @@ fn send_with_retry(cluster: &Cluster, body: &Value) -> Result<Value, FetchError>
                 )));
             }
         }
+    }
+}
+
+/// Emit a single progress frame to stderr. On a TTY we carriage-return
+/// over the previous frame so the terminal shows one live-updating
+/// line; in piped / log contexts we emit a newline per frame but only
+/// every 20 updates so long-running CI logs stay readable.
+pub(crate) fn print_progress(phase: &str, done: usize, total: usize) {
+    let stderr = std::io::stderr();
+    let is_tty = stderr.is_terminal();
+    let pct = if total > 0 { (done * 100) / total } else { 0 };
+    let msg = format!("[ratchet observe] {phase}: {done}/{total} ({pct}%)");
+    let mut handle = stderr.lock();
+    if is_tty {
+        // \r returns to column 0; \x1b[K clears from cursor to end of
+        // line so a shorter new frame doesn't leave trailing garbage
+        // from the previous one.
+        let _ = write!(handle, "\r\x1b[K{msg}");
+        let _ = handle.flush();
+    } else if done == total || done % 20 == 0 {
+        let _ = writeln!(handle, "{msg}");
+    }
+}
+
+/// Finalise the in-progress line. On TTY the updater left the cursor
+/// mid-line — print a trailing newline so subsequent output doesn't
+/// overwrite it. On non-TTY we've already been newline-terminated.
+pub(crate) fn finish_progress() {
+    let stderr = std::io::stderr();
+    if stderr.is_terminal() {
+        let _ = writeln!(stderr.lock());
     }
 }
 

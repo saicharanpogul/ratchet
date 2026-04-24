@@ -942,6 +942,12 @@ fn observe(args: ObserveArgs, as_json: bool) -> Result<i32> {
         idl_override,
         include_account_counts: args.account_counts,
         pace_ms: args.pace_ms,
+        // Live progress goes to stderr; suppress on --json so the
+        // pipe-able output channel stays untouched. Watch / UI modes
+        // inherit this: stderr frames during the first prime, silent
+        // during subsequent background cycles keeps the dashboard
+        // lifecycle quiet.
+        show_progress: !as_json,
     };
 
     let alert_config = ratchet_observe::AlertConfig {

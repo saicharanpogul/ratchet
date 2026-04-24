@@ -32,18 +32,28 @@ Every diff is classified as:
 
 ## Status
 
-Alpha. Phases 0–4 shipped:
+Three lenses on a Solana program, one CLI:
 
-- framework-agnostic IR and rule engine
-- 13 rules across accounts / instructions / enums / PDAs
-- Anchor IDL adapter — file loader, RPC fetcher with auto-derived IDL account address from `--program`, on-chain account decoder
-- `ratchet.lock` format for committable baselines
-- `syn`-based Anchor source parser that fills in PDA seeds the IDL lost
-- `ratchet replay` — samples live program accounts via RPC and flags ones that don't match the new IDL's minimum layout
-- GitHub Action
-- human + JSON output, CI-friendly exit codes (0 safe, 1 breaking, 2 unsafe)
+| Mode | Question it answers | When to run |
+|---|---|---|
+| `ratchet readiness` | Is my program *mainnet-shaped* before first deploy? | Pre-deploy. P-rule preflight (6 rules). |
+| `ratchet check-upgrade` | Will this upgrade corrupt state or break clients? | Pre-release. R-rule diff (16 rules). |
+| `ratchet observe` | Now that it's live, how is my program actually doing? | Post-deploy. IDL-aware tx feed rollup. |
 
-Coming next: Squads proposal diff view, literal LiteSVM program deploy, Quasar compiler-pass mode.
+Plus a Model Context Protocol server (`ratchet mcp`) that exposes all three to Claude / Cursor / Windsurf / any MCP-aware agent as tools.
+
+**What ships today:**
+
+- Framework-agnostic IR + rule engine — 22 rules across accounts, instructions, enums, PDAs, discriminators, padding.
+- Anchor IDL adapter (file + RPC + on-chain IDL account decode).
+- `ratchet.lock` committable baseline + `syn`-based Anchor source parser that fills in PDA seeds the IDL lost.
+- `ratchet replay` — samples live program accounts via RPC and flags any that don't match the new IDL's minimum layout.
+- `ratchet observe` — per-instruction success rate + error distribution + CU percentiles + recent failures with decoded account inputs, plus `--watch`, SQLite-backed snapshots, `--export-html`, `--ui` local dashboard, and `--alert-*` thresholds for CI gating.
+- `ratchet mcp` — stdio MCP server covering every capability above.
+- GitHub Action, Squads V4 proposal summariser, optional LiteSVM deploy backend.
+- Human + JSON output everywhere, CI-friendly exit codes (0 safe, 1 breaking, 2 unsafe, 3 caller error).
+
+Composes with [qedgen](https://github.com/QEDGen/solana-skills): *proofs prove correctness; ratchet proves deployability.*
 
 ## Install
 
@@ -173,6 +183,48 @@ ratchet --json check-upgrade --lock ratchet.lock --new new.json \
 ```sh
 ratchet list-rules
 ```
+
+### Observe a deployed program
+
+```sh
+# One-shot: last 24h, default 1000-tx cap, auto-fetch IDL on-chain.
+ratchet observe --program <PID> --cluster <HELIUS_OR_OTHER_RPC>
+
+# Longer window + account counts (opt-in — uses getProgramAccounts
+# which is rate-limited on free RPC tiers).
+ratchet observe --program <PID> --cluster mainnet \
+  --since 7d --account-counts
+
+# Threshold-based CI gate: exit 1 if withdraw error rate > 5%
+# or any ix's CU p99 regresses past 80k.
+ratchet observe --program <PID> \
+  --alert-error-rate 5 --alert-error-rate-ix withdraw \
+  --alert-cu-p99 80000
+
+# Persistent watch loop — every 5m, snapshots to SQLite, prints
+# Δ-since-last summary so you can spot regressions immediately.
+ratchet observe --program <PID> --watch 5m
+```
+
+Produces per-instruction success-rate + CU percentiles, error-code rollups resolved to IDL error names, and a recent-failures trail with decoded account inputs. Pair with `--export-html report.html` to drop a static self-contained dashboard you can attach to a PR or Slack message, or `--ui` to serve a live version on `http://127.0.0.1:8787`. See `ratchet observe --help` for the full flag catalog.
+
+### Agent integration — `ratchet mcp`
+
+`ratchet mcp` runs a Model Context Protocol server on stdio. Every capability above — readiness, check-upgrade, observe, rule catalogs — becomes a tool any MCP-aware client (Claude Code, Cursor, Windsurf, custom agents) can call:
+
+```sh
+# Claude Code
+claude-code mcp add ratchet -- ratchet mcp
+
+# Then ask Claude:
+# "Is my escrow program ready for mainnet?"
+# → tool call: readiness(idl_path="target/idl/escrow.json")
+#
+# "How has my deposit ix been performing this week?"
+# → tool call: observe-program(program_id="...", window_seconds=604800)
+```
+
+The server advertises five tools (`readiness`, `check-upgrade`, `observe-program`, `list-rules-preflight`, `list-rules-diff`) with full JSON Schemas so agents construct well-formed calls without a doc fetch. Tool failures surface as `isError: true` content blocks rather than JSON-RPC errors, so agents see and reason about them instead of aborting the session.
 
 ### GitHub Action
 

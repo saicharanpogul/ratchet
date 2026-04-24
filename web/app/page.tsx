@@ -65,36 +65,36 @@ function HowItWorks() {
   const steps = [
     {
       n: "01",
-      title: "Snapshot a baseline",
+      title: "Readiness before first deploy",
       body: (
         <>
-          <CodeBlock inline>{`ratchet lock --program <PID>`}</CodeBlock>{" "}
-          writes a <code className="mono">ratchet.lock</code> — the current
-          on-chain schema, committed to your repo.
+          <CodeBlock inline>{`ratchet readiness --new <IDL>`}</CodeBlock>{" "}
+          runs 6 P-rules (missing version fields, reserved padding,
+          unpinned discriminators, unsigned writes) and tells you
+          whether the shape will evolve cleanly.
         </>
       ),
     },
     {
       n: "02",
-      title: "Diff on every PR",
+      title: "Diff on every upgrade",
       body: (
         <>
-          <CodeBlock inline>{`ratchet check-upgrade --lock ratchet.lock --new <NEW_IDL>`}</CodeBlock>{" "}
-          runs 16 rules and exits non-zero on anything that would silently
-          corrupt data.
+          <CodeBlock inline>{`ratchet check-upgrade --lock ratchet.lock --new <IDL>`}</CodeBlock>{" "}
+          runs 16 R-rules and exits non-zero on anything that would
+          corrupt state, break clients, or orphan PDAs.
         </>
       ),
     },
     {
       n: "03",
-      title: "Ship with confidence",
+      title: "Observe while it's live",
       body: (
         <>
-          Intentional renames? Migration declared? Pass{" "}
-          <CodeBlock inline>{`--unsafe allow-rename`}</CodeBlock>{" "}
-          or{" "}
-          <CodeBlock inline>{`--migrated-account Vault`}</CodeBlock>.
-          Every acknowledgement is visible in the report.
+          <CodeBlock inline>{`ratchet observe --program <PID> --watch 5m`}</CodeBlock>{" "}
+          streams per-ix success rates, CU percentiles, and decoded
+          failures. Ships as CLI, static HTML, live dashboard, or an
+          MCP server an agent can call.
         </>
       ),
     },

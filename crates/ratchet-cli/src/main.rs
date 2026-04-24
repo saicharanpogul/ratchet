@@ -14,6 +14,7 @@ use ratchet_core::{
     Severity,
 };
 use ratchet_lock::{Lockfile, DEFAULT_FILENAME};
+use ratchet_observe::redact_rpc_url;
 use ratchet_source::parse_dir;
 use ratchet_squads::{decode_vault_transaction, ProposalKind};
 use ratchet_svm::{
@@ -1451,75 +1452,6 @@ fn fmt_seconds(s: u64) -> String {
     }
 }
 
-/// Redact API keys from an RPC URL so the result is safe to show in
-/// screenshots / shared reports / CI logs. Handles the three common
-/// providers:
-///
-/// - **Helius**: key lives in the `?api-key=...` query param →
-///   value replaced with `***`.
-/// - **QuickNode / Alchemy**: key lives as a long path segment →
-///   segment ≥ 24 chars of `[A-Za-z0-9_-]` replaced with `***`.
-/// - Public endpoints (`api.mainnet-beta.solana.com` etc.) carry no
-///   secrets, so they pass through unchanged.
-fn redact_rpc_url(url: &str) -> String {
-    let (base, rest) = match url.find("://").map(|i| i + 3) {
-        Some(after_scheme) => match url[after_scheme..].find('/') {
-            Some(slash) => url.split_at(after_scheme + slash),
-            None => return url.to_string(),
-        },
-        None => return url.to_string(),
-    };
-
-    let (path, query) = match rest.find('?') {
-        Some(i) => (&rest[..i], Some(&rest[i + 1..])),
-        None => (rest, None),
-    };
-
-    let redacted_path: String = path
-        .split('/')
-        .map(redact_path_segment)
-        .collect::<Vec<_>>()
-        .join("/");
-
-    let mut out = format!("{base}{redacted_path}");
-    if let Some(q) = query {
-        let redacted_q = q
-            .split('&')
-            .map(|kv| {
-                if let Some(eq) = kv.find('=') {
-                    let key = &kv[..eq];
-                    let key_lower = key.to_lowercase();
-                    if matches!(
-                        key_lower.as_str(),
-                        "api-key" | "apikey" | "api_key" | "token" | "key"
-                    ) {
-                        format!("{key}=***")
-                    } else {
-                        kv.to_string()
-                    }
-                } else {
-                    kv.to_string()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("&");
-        out = format!("{out}?{redacted_q}");
-    }
-    out
-}
-
-fn redact_path_segment(seg: &str) -> String {
-    if seg.len() >= 24
-        && seg
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-    {
-        "***".to_string()
-    } else {
-        seg.to_string()
-    }
-}
-
 #[cfg(test)]
 mod cli_tests {
     use super::*;
@@ -1550,58 +1482,16 @@ mod cli_tests {
         assert_eq!(fmt_seconds(45), "45s");
     }
 
+    // URL redaction is now implemented and tested in ratchet-observe
+    // (`crates/ratchet-observe/src/redact.rs`) — one source of truth
+    // so the fetch layer, CLI render, and any future hosted surface
+    // share the same scrubber. The re-export is covered by a single
+    // smoke test here to lock the CLI consumer path.
     #[test]
-    fn redact_rpc_url_masks_helius_api_key_query_param() {
+    fn cli_reexports_the_shared_redactor() {
         assert_eq!(
-            redact_rpc_url("https://mainnet.helius-rpc.com/?api-key=abcdef1234567890"),
+            redact_rpc_url("https://mainnet.helius-rpc.com/?api-key=placeholder"),
             "https://mainnet.helius-rpc.com/?api-key=***"
-        );
-    }
-
-    #[test]
-    fn redact_rpc_url_masks_quicknode_path_token() {
-        assert_eq!(
-            redact_rpc_url(
-                "https://cool-name.solana-mainnet.quiknode.pro/abcdef0123456789abcdef0123456789/"
-            ),
-            "https://cool-name.solana-mainnet.quiknode.pro/***/"
-        );
-    }
-
-    #[test]
-    fn redact_rpc_url_masks_alchemy_path_key() {
-        assert_eq!(
-            redact_rpc_url("https://solana-mainnet.g.alchemy.com/v2/abcdefghijklmnopqrstuvwx"),
-            "https://solana-mainnet.g.alchemy.com/v2/***"
-        );
-    }
-
-    #[test]
-    fn redact_rpc_url_leaves_public_endpoints_alone() {
-        assert_eq!(
-            redact_rpc_url("https://api.mainnet-beta.solana.com"),
-            "https://api.mainnet-beta.solana.com"
-        );
-        assert_eq!(
-            redact_rpc_url("https://api.devnet.solana.com"),
-            "https://api.devnet.solana.com"
-        );
-    }
-
-    #[test]
-    fn redact_rpc_url_preserves_short_path_segments() {
-        // "v2" is a real API version prefix — shouldn't be mistaken for a key.
-        assert_eq!(
-            redact_rpc_url("https://solana-mainnet.g.alchemy.com/v2/"),
-            "https://solana-mainnet.g.alchemy.com/v2/"
-        );
-    }
-
-    #[test]
-    fn redact_rpc_url_masks_multiple_query_params() {
-        assert_eq!(
-            redact_rpc_url("https://rpc.example.com/?api-key=abc123&commitment=confirmed"),
-            "https://rpc.example.com/?api-key=***&commitment=confirmed"
         );
     }
 }

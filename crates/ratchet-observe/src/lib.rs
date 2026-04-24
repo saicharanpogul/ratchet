@@ -32,6 +32,7 @@ pub mod decode;
 pub mod export;
 #[cfg(feature = "rpc")]
 pub mod fetch;
+pub mod redact;
 pub mod report;
 #[cfg(feature = "store")]
 pub mod store;
@@ -42,6 +43,7 @@ pub mod upgrade;
 pub use aggregate::{ErrorBucket, IxMetrics, RecentFailure};
 pub use alert::{evaluate as evaluate_alerts, AlertBreach, AlertConfig};
 pub use export::render_html;
+pub use redact::{redact_error_message, redact_rpc_url};
 pub use report::{AccountCount, ObserveReport, ObserveWindow, UpgradeHistory};
 
 /// Top-level configuration for a single [`observe`] run.

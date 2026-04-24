@@ -244,6 +244,12 @@ pub fn count_accounts_by_discriminator(
     Ok(arr.len() as u64)
 }
 
+/// Maximum number of attempts per JSON-RPC call when the server
+/// returns 429. Back-off sleeps between retries are 1s, 2s, 4s —
+/// enough to get past a typical per-second rate-limit cap on free
+/// tiers without turning a drop into a minute-long hang.
+const RPC_MAX_RETRIES: u32 = 3;
+
 /// Execute a single JSON-RPC call and return the `result` payload.
 fn rpc_call(cluster: &Cluster, method: &str, params: Value) -> Result<Value, FetchError> {
     let body = json!({
@@ -252,14 +258,7 @@ fn rpc_call(cluster: &Cluster, method: &str, params: Value) -> Result<Value, Fet
         "method": method,
         "params": params,
     });
-    let url = cluster.url();
-    let resp = ureq::post(url)
-        .set("content-type", "application/json")
-        .send_json(body)
-        .map_err(|e| FetchError::Http(e.to_string()))?;
-    let full: Value = resp
-        .into_json()
-        .map_err(|e| FetchError::Shape(format!("parse response: {e}")))?;
+    let full = send_with_retry(cluster, &body)?;
     if let Some(err) = full.get("error") {
         return Err(FetchError::Rpc(err.to_string()));
     }
@@ -269,15 +268,58 @@ fn rpc_call(cluster: &Cluster, method: &str, params: Value) -> Result<Value, Fet
 }
 
 fn rpc_batch(cluster: &Cluster, batch: &[Value]) -> Result<Vec<Value>, FetchError> {
-    let url = cluster.url();
-    let resp = ureq::post(url)
-        .set("content-type", "application/json")
-        .send_json(Value::Array(batch.to_vec()))
-        .map_err(|e| FetchError::Http(e.to_string()))?;
-    let responses: Vec<Value> = resp
-        .into_json()
+    let body = Value::Array(batch.to_vec());
+    let full = send_with_retry(cluster, &body)?;
+    let responses: Vec<Value> = serde_json::from_value(full)
         .map_err(|e| FetchError::Shape(format!("parse batch response: {e}")))?;
     Ok(responses)
+}
+
+/// Single POST with retry/backoff on 429. Every error string runs
+/// through `redact_error_message` so API keys in URLs never leak into
+/// the FetchError body (and from there into stderr / CI logs).
+fn send_with_retry(cluster: &Cluster, body: &Value) -> Result<Value, FetchError> {
+    let url = cluster.url();
+    let mut attempt = 0u32;
+    loop {
+        let resp = ureq::post(url)
+            .set("content-type", "application/json")
+            .send_json(body.clone());
+        match resp {
+            Ok(r) => {
+                return r.into_json::<Value>().map_err(|e| {
+                    FetchError::Shape(crate::redact::redact_error_message(&format!(
+                        "parse response: {e}"
+                    )))
+                });
+            }
+            Err(ureq::Error::Status(429, _)) if attempt < RPC_MAX_RETRIES => {
+                let backoff = 1u64 << attempt; // 1s, 2s, 4s
+                eprintln!(
+                    "warn: RPC 429 from {}; retrying in {backoff}s (attempt {}/{})",
+                    crate::redact::redact_rpc_url(url),
+                    attempt + 1,
+                    RPC_MAX_RETRIES
+                );
+                std::thread::sleep(std::time::Duration::from_secs(backoff));
+                attempt += 1;
+            }
+            Err(ureq::Error::Status(429, _)) => {
+                // Exhausted retries — surface a friendlier message
+                // than ureq's default so the user knows *why*.
+                return Err(FetchError::Http(format!(
+                    "{}: rate limit exceeded after {} retries — lower --limit or switch to a paid RPC tier",
+                    crate::redact::redact_rpc_url(url),
+                    RPC_MAX_RETRIES
+                )));
+            }
+            Err(e) => {
+                return Err(FetchError::Http(crate::redact::redact_error_message(
+                    &e.to_string(),
+                )));
+            }
+        }
+    }
 }
 
 fn now_seconds() -> i64 {

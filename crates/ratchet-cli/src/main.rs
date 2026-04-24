@@ -264,6 +264,20 @@ struct ObserveArgs {
     /// Limit `--alert-cu-p99` to a single ix.
     #[arg(long = "alert-cu-p99-ix", value_name = "IX")]
     alert_cu_p99_ix: Option<String>,
+
+    /// Re-run the observation on a loop every `INTERVAL`
+    /// (`--watch 5m`, `--watch 30s`). Each cycle persists a snapshot
+    /// to `--db` and prints a delta summary against the previous
+    /// snapshot. Stops on Ctrl-C.
+    #[arg(long, value_name = "INTERVAL")]
+    watch: Option<String>,
+
+    /// SQLite path for persisted snapshots. Default
+    /// `~/.ratchet/observe/<program>.db`. Use `:memory:` when you
+    /// don't want a file on disk (each watch cycle still prints a
+    /// delta against the previous in-process snapshot).
+    #[arg(long, value_name = "PATH")]
+    db: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -889,28 +903,209 @@ fn observe(args: ObserveArgs, as_json: bool) -> Result<i32> {
         cu_p99_ix: args.alert_cu_p99_ix.clone(),
     };
 
-    let report = ratchet_observe::observe(&cluster, &opts)
-        .with_context(|| format!("observing program {}", args.program))?;
-    let breaches = ratchet_observe::evaluate_alerts(&report, &alert_config);
+    let store = observe_store(&args)?;
 
-    if as_json {
-        // Include breaches alongside the report so JSON consumers don't
-        // have to correlate exit codes with stderr.
-        let envelope = serde_json::json!({
-            "report": report,
-            "alerts": breaches,
-        });
-        println!("{}", serde_json::to_string_pretty(&envelope)?);
-    } else {
-        render_observe_human(&report, cluster.url());
-        if !breaches.is_empty() {
-            render_alert_breaches(&breaches);
+    match &args.watch {
+        None => observe_one_shot(&cluster, &opts, &alert_config, store.as_ref(), as_json),
+        Some(interval) => {
+            let interval_secs = parse_duration(interval)
+                .with_context(|| format!("parsing --watch {interval:?}"))?;
+            observe_watch(
+                &cluster,
+                &opts,
+                &alert_config,
+                store.as_ref(),
+                interval_secs,
+                as_json,
+            )
+        }
+    }
+}
+
+fn observe_store(args: &ObserveArgs) -> Result<Option<ratchet_observe::store::Store>> {
+    let path = resolve_store_path(args)?;
+    match path {
+        Some(p) if p.as_os_str() == ":memory:" => {
+            Ok(Some(ratchet_observe::store::Store::in_memory()?))
+        }
+        Some(p) => {
+            if let Some(parent) = p.parent() {
+                std::fs::create_dir_all(parent)
+                    .with_context(|| format!("creating store directory {}", parent.display()))?;
+            }
+            Ok(Some(ratchet_observe::store::Store::open(&p)?))
+        }
+        None => Ok(None),
+    }
+}
+
+/// Default snapshot path unless the dev overrides with `--db`.
+/// Watch mode always wants persistence; one-shot runs only open a
+/// store when explicitly asked.
+fn resolve_store_path(args: &ObserveArgs) -> Result<Option<PathBuf>> {
+    if let Some(p) = &args.db {
+        return Ok(Some(p.clone()));
+    }
+    if args.watch.is_some() {
+        let home = std::env::var_os("HOME")
+            .ok_or_else(|| anyhow::anyhow!("$HOME not set; pass --db explicitly"))?;
+        let mut path = PathBuf::from(home);
+        path.push(".ratchet");
+        path.push("observe");
+        path.push(format!("{}.db", args.program));
+        return Ok(Some(path));
+    }
+    Ok(None)
+}
+
+fn observe_one_shot(
+    cluster: &Cluster,
+    opts: &ratchet_observe::ObserveOpts,
+    alert_config: &ratchet_observe::AlertConfig,
+    store: Option<&ratchet_observe::store::Store>,
+    as_json: bool,
+) -> Result<i32> {
+    let previous = store.and_then(|s| s.latest_before(&opts.program_id, i64_now()).ok().flatten());
+    let report = ratchet_observe::observe(cluster, opts)
+        .with_context(|| format!("observing program {}", opts.program_id))?;
+    let breaches = ratchet_observe::evaluate_alerts(&report, alert_config);
+
+    if let Some(s) = store {
+        if let Err(e) = s.insert(&report, i64_now()) {
+            eprintln!("warn: store insert failed: {e:#}");
         }
     }
 
-    // Exit 1 on any alert breach — same convention `check-upgrade`
-    // uses when it finds a breaking change. Exit 0 otherwise.
+    emit_observe_result(
+        cluster.url(),
+        &report,
+        &breaches,
+        previous.as_ref().map(|(_, r)| r),
+        as_json,
+    )?;
+
     Ok(if breaches.is_empty() { 0 } else { 1 })
+}
+
+fn observe_watch(
+    cluster: &Cluster,
+    opts: &ratchet_observe::ObserveOpts,
+    alert_config: &ratchet_observe::AlertConfig,
+    store: Option<&ratchet_observe::store::Store>,
+    interval_seconds: u64,
+    as_json: bool,
+) -> Result<i32> {
+    // Watch semantically requires a store: the delta-vs-previous column
+    // is what makes the loop interesting. Keep the `:memory:` fallback
+    // for dry-run / test use; persistent store is the normal path.
+    let store = store.ok_or_else(|| {
+        anyhow::anyhow!("--watch requires a store; pass --db <path> or set $HOME for the default")
+    })?;
+
+    eprintln!(
+        "ratchet observe --watch {}: press Ctrl-C to stop",
+        fmt_seconds(interval_seconds)
+    );
+    let mut cycle = 0u64;
+    loop {
+        let previous = store
+            .latest_before(&opts.program_id, i64_now())
+            .ok()
+            .flatten();
+
+        let report = match ratchet_observe::observe(cluster, opts) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("warn: observe cycle {cycle} failed: {e:#}");
+                std::thread::sleep(std::time::Duration::from_secs(interval_seconds));
+                cycle += 1;
+                continue;
+            }
+        };
+        let breaches = ratchet_observe::evaluate_alerts(&report, alert_config);
+        if let Err(e) = store.insert(&report, i64_now()) {
+            eprintln!("warn: store insert failed: {e:#}");
+        }
+
+        emit_observe_result(
+            cluster.url(),
+            &report,
+            &breaches,
+            previous.as_ref().map(|(_, r)| r),
+            as_json,
+        )?;
+
+        cycle += 1;
+        std::thread::sleep(std::time::Duration::from_secs(interval_seconds));
+    }
+}
+
+fn emit_observe_result(
+    cluster_url: &str,
+    report: &ratchet_observe::ObserveReport,
+    breaches: &[ratchet_observe::AlertBreach],
+    previous: Option<&ratchet_observe::ObserveReport>,
+    as_json: bool,
+) -> Result<()> {
+    if as_json {
+        let envelope = serde_json::json!({
+            "report": report,
+            "alerts": breaches,
+            "previous_tx_count": previous.map(|r| r.window.tx_count),
+        });
+        println!("{}", serde_json::to_string_pretty(&envelope)?);
+    } else {
+        render_observe_human(report, cluster_url);
+        if let Some(prev) = previous {
+            render_delta(prev, report);
+        }
+        if !breaches.is_empty() {
+            render_alert_breaches(breaches);
+        }
+    }
+    Ok(())
+}
+
+fn render_delta(prev: &ratchet_observe::ObserveReport, cur: &ratchet_observe::ObserveReport) {
+    println!();
+    println!("Δ since last snapshot");
+    println!("────────────────────────────────────────────────────────────────────");
+    let tx_delta = cur.window.tx_count as i64 - prev.window.tx_count as i64;
+    println!(
+        "tx count:        {} → {} ({:+})",
+        prev.window.tx_count, cur.window.tx_count, tx_delta
+    );
+
+    use std::collections::HashMap;
+    let prev_by_name: HashMap<&str, f64> = prev
+        .instructions
+        .iter()
+        .filter_map(|ix| ix.success_rate.map(|r| (ix.name.as_str(), r)))
+        .collect();
+    for ix in &cur.instructions {
+        if let (Some(prev_rate), Some(cur_rate)) =
+            (prev_by_name.get(ix.name.as_str()), ix.success_rate)
+        {
+            let delta_pp = (cur_rate - prev_rate) * 100.0;
+            if delta_pp.abs() >= 0.1 {
+                println!(
+                    "{:<24} success {:>5.1}% → {:>5.1}% ({:+.1} pp)",
+                    ix.name,
+                    prev_rate * 100.0,
+                    cur_rate * 100.0,
+                    delta_pp
+                );
+            }
+        }
+    }
+}
+
+fn i64_now() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 fn render_alert_breaches(breaches: &[ratchet_observe::AlertBreach]) {

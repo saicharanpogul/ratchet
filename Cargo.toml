@@ -9,6 +9,7 @@ members = [
     "crates/ratchet-quasar",
     "crates/ratchet-squads",
     "crates/ratchet-wasm",
+    "crates/ratchet-observe",
     "crates/ratchet-cli",
 ]
 

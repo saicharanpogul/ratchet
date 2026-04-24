@@ -1,0 +1,40 @@
+[package]
+name = "solana-ratchet-observe"
+description = "IDL-aware observability for deployed Solana programs — ratchet's post-deploy lens"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+# `rpc` gates the tx-fetching HTTP path so consumers that just want the
+# aggregation / report types (tests, wasm, hosted dashboards that get
+# their tx stream from elsewhere) can depend on this crate without
+# pulling `ureq`. On by default — the CLI needs RPC.
+default = ["rpc"]
+rpc = ["dep:ureq", "ratchet-anchor/rpc"]
+# `store` enables on-disk persistence via SQLite — needed for watch
+# mode + historical comparison. Off by default so a one-shot `observe`
+# run has zero filesystem footprint.
+store = ["dep:rusqlite"]
+
+[dependencies]
+ratchet-core = { package = "solana-ratchet-core", path = "../ratchet-core", version = "0.3.1" }
+ratchet-anchor = { package = "solana-ratchet-anchor", path = "../ratchet-anchor", version = "0.3.1", default-features = false }
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+bs58.workspace = true
+ureq = { workspace = true, optional = true }
+rusqlite = { version = "0.32", features = ["bundled"], optional = true }
+
+[dev-dependencies]
+# End-to-end tests mock the JSON-RPC layer with canned responses, so
+# they don't need live mainnet access.

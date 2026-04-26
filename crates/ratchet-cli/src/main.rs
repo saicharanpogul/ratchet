@@ -1,6 +1,6 @@
 //! `ratchet` — upgrade-safety checks for Solana programs.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{bail, Context, Result};
@@ -121,6 +121,14 @@ struct CheckUpgradeArgs {
     /// seeds when they were written).
     #[arg(long = "old-source", value_name = "DIR")]
     old_source: Option<PathBuf>,
+
+    /// Treat the IDL paths as Quasar-emitted IDLs rather than Anchor.
+    /// Auto-detected when `Quasar.toml` exists in the current directory.
+    /// The flag applies to `--new` and `--old` simultaneously — mixing
+    /// Anchor + Quasar IDLs in one diff is unsupported (rules are
+    /// framework-agnostic but the loaders are not).
+    #[arg(long)]
+    quasar: bool,
 }
 
 #[derive(Debug, Args)]
@@ -157,7 +165,7 @@ struct ReplayArgs {
 #[derive(Debug, Args)]
 struct ReadinessArgs {
     /// Path to the IDL JSON to lint. Typically `target/idl/<program>.json`
-    /// from an Anchor build.
+    /// from an Anchor build, or the equivalent file from `quasar build`.
     #[arg(long)]
     new: PathBuf,
 
@@ -165,6 +173,12 @@ struct ReadinessArgs {
     /// per flag: `--unsafe allow-no-version-field --unsafe allow-no-signer`.
     #[arg(long = "unsafe", value_name = "FLAG")]
     unsafes: Vec<String>,
+
+    /// Treat `--new` as a Quasar-emitted IDL rather than an Anchor IDL.
+    /// Auto-detected when a `Quasar.toml` file exists in the current
+    /// directory; pass explicitly to force Quasar mode from elsewhere.
+    #[arg(long)]
+    quasar: bool,
 }
 
 #[derive(Debug, Args)]
@@ -253,7 +267,8 @@ fn run(cli: Cli) -> Result<i32> {
 }
 
 fn readiness(args: ReadinessArgs, as_json: bool) -> Result<i32> {
-    let surface = normalize(&load_idl_from_file(&args.new)?)?;
+    let quasar_mode = quasar_mode_active(args.quasar, &args.new, as_json);
+    let surface = load_surface(&args.new, quasar_mode)?;
 
     let mut ctx = CheckContext::new();
     for flag in &args.unsafes {
@@ -607,14 +622,14 @@ fn check_upgrade(args: CheckUpgradeArgs, as_json: bool) -> Result<i32> {
 }
 
 fn load_new(args: &CheckUpgradeArgs) -> Result<ProgramSurface> {
-    let idl = load_idl_from_file(&args.new)?;
-    normalize(&idl)
+    let quasar_mode = quasar_mode_active(args.quasar, &args.new, /*as_json=*/ false);
+    load_surface(&args.new, quasar_mode)
 }
 
 fn load_old(args: &CheckUpgradeArgs) -> Result<ProgramSurface> {
     if let Some(path) = &args.old {
-        let idl = load_idl_from_file(path)?;
-        return normalize(&idl);
+        let quasar_mode = quasar_mode_active(args.quasar, path, /*as_json=*/ false);
+        return load_surface(path, quasar_mode);
     }
     if let Some(path) = &args.lock {
         let lock =
@@ -788,5 +803,46 @@ fn render_human(report: &Report) {
         Some(Severity::Additive) | None => {
             println!("verdict: safe");
         }
+    }
+}
+
+/// Decide whether to treat an IDL path as Quasar-emitted JSON.
+///
+/// The explicit `--quasar` flag always wins. Otherwise, autodetect
+/// from the *current working directory* — Quasar projects ship a
+/// `Quasar.toml` at their workspace root, which is normally the cwd
+/// when a dev runs `quasar build && ratchet readiness`. Walking up
+/// from the IDL path's directory would also work but feels surprising
+/// when the user is intentionally pointing at a stranger's IDL.
+///
+/// Logs a one-line "Quasar project detected" banner to stderr the
+/// first time autodetect fires (suppressed in `--json` mode so machine
+/// consumers don't see human chrome).
+fn quasar_mode_active(explicit: bool, _idl_path: &Path, as_json: bool) -> bool {
+    if explicit {
+        return true;
+    }
+    let detected = std::path::Path::new("Quasar.toml").exists();
+    if detected && !as_json {
+        eprintln!(
+            "ratchet: Quasar project detected (Quasar.toml in cwd) — using Quasar IDL parser"
+        );
+    }
+    detected
+}
+
+/// Load + normalise an IDL JSON, picking the Anchor or Quasar path
+/// based on `quasar_mode`. Both lower into the same framework-agnostic
+/// `ProgramSurface` so every rule downstream is identical.
+fn load_surface(path: &Path, quasar_mode: bool) -> Result<ProgramSurface> {
+    if quasar_mode {
+        let idl = ratchet_quasar::load_quasar_idl(path)
+            .with_context(|| format!("loading Quasar IDL at {}", path.display()))?;
+        ratchet_quasar::normalize(&idl)
+            .with_context(|| format!("normalising Quasar IDL at {}", path.display()))
+    } else {
+        let idl = load_idl_from_file(path)
+            .with_context(|| format!("loading Anchor IDL at {}", path.display()))?;
+        normalize(&idl).with_context(|| format!("normalising Anchor IDL at {}", path.display()))
     }
 }

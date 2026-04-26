@@ -1,42 +1,72 @@
 //! Quasar adapter for [`ratchet`](https://github.com/saicharanpogul/ratchet).
 //!
 //! Quasar (<https://quasar-lang.com>) is a compile-time Solana program
-//! framework. Running `ratchet` as a *compiler pass* inside Quasar —
-//! rather than a standalone CLI invoked from CI — gives the strongest
-//! possible guarantee: an incompatible upgrade refuses to compile unless
-//! a migration is declared in source.
+//! framework. Quasar's IDL JSON shape is structurally distinct from
+//! Anchor's (variable-length discriminators, untagged type union,
+//! struct-only typedefs), so this crate ships:
 //!
-//! This crate provides the surface that such a compiler pass uses:
-//!
-//! - [`SurfaceBuilder`] — fluent builder for assembling a
-//!   [`ProgramSurface`] from an AST without manually mutating
-//!   `BTreeMap`s.
-//! - [`check_pair`] — the one-call convenience wrapper the Quasar pass
-//!   will invoke: `check_pair(old, new, ctx)` → [`Report`].
+//! - [`idl::QuasarIdl`] + sub-types — the deserialisation shape that
+//!   matches Quasar's `schema/src/lib.rs`.
+//! - [`load_quasar_idl`] / [`parse_quasar_idl_str`] — file + string
+//!   loaders for that JSON.
+//! - [`normalize`] — turns a `QuasarIdl` into ratchet's framework-
+//!   agnostic [`ProgramSurface`] IR. Once normalised, every existing
+//!   ratchet rule (P-rules, R-rules) runs against a Quasar surface
+//!   identically to an Anchor one.
+//! - [`check_pair`] / [`check_pair_readiness`] — convenience wrappers
+//!   for callers that already have surfaces in hand. Run the diff
+//!   (R-rules) and preflight (P-rules) catalogs respectively.
+//! - [`SurfaceBuilder`] — fluent builder for assembling a surface
+//!   directly from an AST without going through JSON. Useful for a
+//!   future compiler-pass integration.
 //! - [`detect_quasar_project`] — heuristic for tooling that needs to
-//!   dispatch between the Anchor and Quasar IDL loaders.
+//!   dispatch between the Anchor and Quasar IDL paths.
 //!
-//! The Quasar compiler's own source parser is deliberately out of scope
-//! here — Quasar's AST is internal, and once its schema output
-//! stabilises the loader can either live upstream in the Quasar
-//! repository or be added to this crate.
+//! See `docs/quasar-integration.md` in the repo root for the runtime
+//! workflow (`quasar build && ratchet readiness …`) plus the roadmap
+//! for matching Quasar's evolution (binary canonical schema, eventual
+//! plugin API).
+
+pub mod idl;
+pub mod load;
+pub mod normalize;
 
 use std::path::{Path, PathBuf};
 
 use ratchet_core::{
-    check, AccountDef, CheckContext, Discriminator, FieldDef, InstructionDef, ProgramSurface,
-    Report, Rule,
+    check, default_preflight_rules, default_rules, preflight, AccountDef, CheckContext,
+    Discriminator, FieldDef, InstructionDef, PreflightRule, ProgramSurface, Report, Rule,
 };
 use serde::{Deserialize, Serialize};
 
-/// Run the default rule set against a pair of Quasar-derived surfaces.
-///
-/// This is the function a Quasar compiler pass invokes after it has
-/// built [`ProgramSurface`] values for the old (baseline) and new
-/// (current) versions of the program.
+pub use idl::QuasarIdl;
+pub use load::{load_quasar_idl, parse_quasar_idl_str};
+pub use normalize::{normalize, normalize_str};
+
+/// Run the diff rule set (R001–R016) against a pair of Quasar-derived
+/// surfaces. Counterpart to [`check_pair_readiness`] for the preflight
+/// catalog.
 pub fn check_pair(old: &ProgramSurface, new: &ProgramSurface, ctx: &CheckContext) -> Report {
-    let rules: Vec<Box<dyn Rule>> = ratchet_core::default_rules();
+    let rules: Vec<Box<dyn Rule>> = default_rules();
     check(old, new, ctx, &rules)
+}
+
+/// Run the preflight rule set (P001–P006) against a single Quasar-
+/// derived surface. Use before first deploy to catch the same
+/// upgrade-readiness signals (`version` field, reserved padding,
+/// signer coverage, name collisions) ratchet checks for Anchor —
+/// the rules are framework-agnostic, this just picks the right
+/// catalog.
+///
+/// Note: P003 / P004 (default-discriminator-pin) won't fire on
+/// Quasar surfaces. Quasar devs always assign discriminators
+/// explicitly (`#[instruction(discriminator = N)]`), so the "is this
+/// the default Anchor sha256 prefix?" check has no semantic meaning —
+/// the padded discriminator never matches, and the rule stays silent
+/// by design.
+pub fn check_pair_readiness(surface: &ProgramSurface, ctx: &CheckContext) -> Report {
+    let rules: Vec<Box<dyn PreflightRule>> = default_preflight_rules();
+    preflight(surface, ctx, &rules)
 }
 
 /// Ergonomic builder for [`ProgramSurface`]. Fluent chaining lets a

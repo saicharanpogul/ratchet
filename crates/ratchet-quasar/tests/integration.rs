@@ -52,11 +52,7 @@ fn escrow_readiness_flags_expected_p_rules() {
     let surface = normalize(&idl).unwrap();
     let report = check_pair_readiness(&surface, &CheckContext::new());
 
-    let ids: Vec<&str> = report
-        .findings
-        .iter()
-        .map(|f| f.rule_id.as_str())
-        .collect();
+    let ids: Vec<&str> = report.findings.iter().map(|f| f.rule_id.as_str()).collect();
     // Bare hackathon shape: no `version` prefix, no `_reserved` padding.
     assert!(
         ids.contains(&"P001"),
@@ -81,11 +77,7 @@ fn escrow_v2_diff_fires_r001_r006_r007_r008() {
     let new_surface = normalize(&load_quasar_idl(fixture("escrow.v2.json")).unwrap()).unwrap();
 
     let report = check_pair(&old_surface, &new_surface, &CheckContext::new());
-    let ids: Vec<&str> = report
-        .findings
-        .iter()
-        .map(|f| f.rule_id.as_str())
-        .collect();
+    let ids: Vec<&str> = report.findings.iter().map(|f| f.rule_id.as_str()).collect();
 
     // The v2 fixture is shaped to hit a quartet on a single diff:
     assert!(

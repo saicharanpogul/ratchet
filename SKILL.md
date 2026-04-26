@@ -1,6 +1,6 @@
 ---
 name: ratchet
-description: Upgrade-safety checker for Solana programs. Two modes — (1) readiness lint on a single Anchor IDL ("is this program mainnet-ready?"), (2) upgrade diff against a deployed baseline ("will this upgrade break existing state?"). Use before first deploy, before every subsequent upgrade, or when reviewing a Squads proposal.
+description: Upgrade-safety checker for Solana programs (Anchor and Quasar). Two modes — (1) readiness lint on a single IDL ("is this program mainnet-ready?"), (2) upgrade diff against a deployed baseline ("will this upgrade break existing state?"). Use before first deploy, before every subsequent upgrade, or when reviewing a Squads proposal.
 homepage: https://github.com/saicharanpogul/ratchet
 ---
 
@@ -18,6 +18,20 @@ Before running anything, an AI agent should **ask the developer which mode they 
 > "Are you preparing this program for its first mainnet deploy, or upgrading an existing deployment? If new, I'll run a **readiness** check. If upgrading, I'll run **check-upgrade** against your deployed baseline."
 
 Readiness is the more common entry point — most developers reach ratchet before their first deploy, not mid-upgrade. Default to readiness if the developer's answer is ambiguous, then follow up with check-upgrade once a baseline exists.
+
+### Anchor or Quasar?
+
+Both frameworks emit IDL JSON at `target/idl/<program>.json`. Ratchet uses the same commands either way; the loader switches based on the project shape:
+
+- **Anchor** (default): `Anchor.toml` at the workspace root. Use the commands above as-is.
+- **Quasar**: `Quasar.toml` at the workspace root. Ratchet auto-detects this and switches to the Quasar parser. From outside the workspace, pass `--quasar` explicitly:
+
+  ```sh
+  ratchet readiness --new target/idl/x.json --quasar
+  ratchet check-upgrade --old old.json --new new.json --quasar
+  ```
+
+Mixing the two in one diff isn't supported — the rules are framework-agnostic but the loaders are not.
 
 ## Triggers
 

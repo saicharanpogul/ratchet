@@ -32,18 +32,30 @@ Every diff is classified as:
 
 ## Status
 
-Alpha. Phases 0–4 shipped:
+Alpha — production-shaped, but pre-1.0. What ships today:
 
-- framework-agnostic IR and rule engine
-- 13 rules across accounts / instructions / enums / PDAs
-- Anchor IDL adapter — file loader, RPC fetcher with auto-derived IDL account address from `--program`, on-chain account decoder
-- `ratchet.lock` format for committable baselines
-- `syn`-based Anchor source parser that fills in PDA seeds the IDL lost
-- `ratchet replay` — samples live program accounts via RPC and flags ones that don't match the new IDL's minimum layout
-- GitHub Action
-- human + JSON output, CI-friendly exit codes (0 safe, 1 breaking, 2 unsafe)
+- 22 rules: 16 R-rules (diff-time) + 6 P-rules (preflight readiness).
+- **Anchor** IDL adapter — file loader, RPC fetcher with auto-derived
+  IDL account address from `--program`, on-chain account decoder.
+- **Quasar** IDL adapter — parses + normalises Quasar's
+  variable-discriminator JSON shape so every rule applies identically.
+  Auto-detects `Quasar.toml`; explicit `--quasar` flag for non-cwd cases.
+- `ratchet.lock` committable baselines; `syn`-based Anchor source parser
+  that fills in PDA seeds the IDL lost.
+- `ratchet replay` — samples live program accounts via RPC and flags
+  ones that don't match the new IDL's minimum layout. Optional LiteSVM
+  deploy smoke test under the `litesvm-deploy` feature.
+- `ratchet squads` — decodes Squads V4 vault-transaction proposals and
+  optionally runs `check-upgrade` against the proposal's target program.
+- GitHub Actions: `action.yml` (Anchor) + `action-quasar.yml` (Quasar).
+- Human + JSON output everywhere, CI-friendly exit codes (0 safe,
+  1 breaking, 2 unsafe).
 
-Coming next: Squads proposal diff view, literal LiteSVM program deploy, Quasar compiler-pass mode.
+Coming next: stable Quasar `__QUASAR_SCHEMA` binary reader once
+[upstream PR](https://github.com/blueshift-gg/quasar/pull/177) lands;
+deeper compiler-pass integration when Quasar exposes a plugin surface
+(see [`docs/quasar-integration.md`](docs/quasar-integration.md) for our
+roadmap).
 
 ## Install
 
@@ -106,6 +118,48 @@ Anchor 0.30+ IDLs capture PDA seeds but sometimes flatten account-field referenc
 ratchet check-upgrade --lock ratchet.lock --new target/idl/vault.json \
   --new-source programs/vault/src
 ```
+
+### Using ratchet with [Quasar](https://github.com/blueshift-gg/quasar)
+
+Quasar emits an IDL JSON at `target/idl/<program>.json` after `quasar build`. Same workflow as Anchor — point `ratchet readiness` / `check-upgrade` at the file. Inside a Quasar workspace, ratchet detects `Quasar.toml` and switches loaders automatically:
+
+```sh
+# From a Quasar repo root — autodetect picks the Quasar parser.
+quasar build
+ratchet readiness --new target/idl/escrow.json
+ratchet check-upgrade \
+  --old examples/quasar/escrow.json \
+  --new target/idl/escrow.json
+```
+
+Outside a Quasar workspace, force the Quasar parser explicitly:
+
+```sh
+ratchet readiness --new path/to/quasar.json --quasar
+ratchet check-upgrade --old old.json --new new.json --quasar
+```
+
+Try the committed examples without installing Quasar:
+
+```sh
+ratchet readiness  --new examples/quasar/escrow.json --quasar
+ratchet check-upgrade \
+  --old examples/quasar/escrow.json \
+  --new examples/quasar/escrow.v2.json \
+  --quasar
+```
+
+The same R-rule + P-rule catalog applies; only the loader differs. Two semantics notes:
+
+- **Quasar uses 1-byte discriminators.** Ratchet pads to its 8-byte
+  internal slot with trailing zeros. R006 (account-discriminator-change)
+  fires on any byte change, same as Anchor.
+- **P003 / P004 (default-discriminator-pin) stay silent on Quasar.**
+  Quasar devs always assign discriminators explicitly
+  (`#[instruction(discriminator = N)]`), so the "is this the Anchor
+  sha256 default?" check is a category error there.
+
+A drop-in CI workflow lives at [`action-quasar.yml`](action-quasar.yml). The roadmap for matching Quasar's evolution (binary `__QUASAR_SCHEMA`, eventual plugin API) is in [`docs/quasar-integration.md`](docs/quasar-integration.md).
 
 ### Sample live accounts and verify they still match
 

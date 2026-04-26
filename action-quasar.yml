@@ -1,0 +1,117 @@
+name: 'ratchet upgrade-safety check (Quasar)'
+description: 'Fail a Quasar program PR when its IDL diff would corrupt on-chain state, break clients, or orphan PDAs. Wrapper around `ratchet check-upgrade --quasar`.'
+author: 'Saicharan Pogul'
+branding:
+  icon: 'shield'
+  color: 'purple'
+
+inputs:
+  new:
+    description: 'Path to the new (candidate) Quasar IDL JSON. Typically target/idl/<program>.json from `quasar build`.'
+    required: true
+  lock:
+    description: 'Path to the committed ratchet.lock baseline. Mutually exclusive with `old`.'
+    required: false
+    default: 'ratchet.lock'
+  old:
+    description: 'Path to a second Quasar IDL to diff against. Overrides `lock`.'
+    required: false
+    default: ''
+  unsafes:
+    description: 'Space-separated list of --unsafe acknowledgement flags (e.g. "allow-rename allow-field-append").'
+    required: false
+    default: ''
+  migrated-accounts:
+    description: 'Space-separated account names with a declared migration / realloc.'
+    required: false
+    default: ''
+  json:
+    description: 'Set to "true" to emit a JSON report to stdout.'
+    required: false
+    default: 'false'
+  working-directory:
+    description: 'Working directory the command runs in. When this contains a Quasar.toml, the --quasar flag is auto-detected; otherwise it is passed explicitly.'
+    required: false
+    default: '.'
+  version:
+    description: 'Git ref (branch, tag, or commit) of ratchet to install. Ignored if ratchet is already on PATH.'
+    required: false
+    default: 'v0.3.2'
+
+outputs:
+  exit-code:
+    description: 'Exit code from ratchet (0 additive, 1 breaking, 2 unsafe, 3 CLI error).'
+    value: ${{ steps.check.outputs.exit-code }}
+  verdict:
+    description: 'One of: safe, breaking, unsafe, error.'
+    value: ${{ steps.check.outputs.verdict }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install ratchet
+      shell: bash
+      run: |
+        if command -v ratchet >/dev/null 2>&1; then
+          echo "ratchet already on PATH: $(command -v ratchet)"
+          ratchet --version || true
+          exit 0
+        fi
+        if ! command -v cargo >/dev/null 2>&1; then
+          echo "::error::cargo is not available. Add actions-rust-lang/setup-rust-toolchain@v1 before this action." >&2
+          exit 1
+        fi
+        echo "Installing ratchet from ${{ inputs.version }}"
+        if [[ "${{ inputs.version }}" == v* ]]; then
+          cargo install --quiet \
+            --git https://github.com/saicharanpogul/ratchet \
+            --tag "${{ inputs.version }}" \
+            solana-ratchet-cli
+        else
+          cargo install --quiet \
+            --git https://github.com/saicharanpogul/ratchet \
+            --branch "${{ inputs.version }}" \
+            solana-ratchet-cli
+        fi
+
+    - name: Run ratchet check-upgrade --quasar
+      id: check
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        set +e
+        # Always pass --quasar — the action is named for Quasar projects,
+        # so we don't rely on Quasar.toml autodetect here. Makes the
+        # action behave the same regardless of working-directory shape.
+        ARGS=(check-upgrade --quasar --new "${{ inputs.new }}")
+
+        if [[ -n "${{ inputs.old }}" ]]; then
+          ARGS+=(--old "${{ inputs.old }}")
+        else
+          ARGS+=(--lock "${{ inputs.lock }}")
+        fi
+
+        for flag in ${{ inputs.unsafes }}; do
+          ARGS+=(--unsafe "$flag")
+        done
+        for acct in ${{ inputs.migrated-accounts }}; do
+          ARGS+=(--migrated-account "$acct")
+        done
+
+        GLOBAL=()
+        if [[ "${{ inputs.json }}" == "true" ]]; then
+          GLOBAL+=(--json)
+        fi
+
+        ratchet "${GLOBAL[@]}" "${ARGS[@]}"
+        CODE=$?
+
+        case "$CODE" in
+          0) VERDICT="safe" ;;
+          1) VERDICT="breaking" ;;
+          2) VERDICT="unsafe" ;;
+          *) VERDICT="error" ;;
+        esac
+        echo "exit-code=$CODE" >> "$GITHUB_OUTPUT"
+        echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
+        exit "$CODE"

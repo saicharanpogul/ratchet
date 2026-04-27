@@ -9,7 +9,7 @@
 //!   matches Quasar's `schema/src/lib.rs`.
 //! - [`load_quasar_idl`] / [`parse_quasar_idl_str`] — file + string
 //!   loaders for that JSON.
-//! - [`normalize`] — turns a `QuasarIdl` into ratchet's framework-
+//! - [`normalize()`] — turns a `QuasarIdl` into ratchet's framework-
 //!   agnostic [`ProgramSurface`] IR. Once normalised, every existing
 //!   ratchet rule (P-rules, R-rules) runs against a Quasar surface
 //!   identically to an Anchor one.

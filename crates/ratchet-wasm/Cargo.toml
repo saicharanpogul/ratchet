@@ -24,8 +24,8 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # No default features — ureq and the fetch module drop out on wasm32.
-ratchet-core = { package = "solana-ratchet-core", path = "../ratchet-core", version = "0.3.1" }
-ratchet-anchor = { package = "solana-ratchet-anchor", path = "../ratchet-anchor", version = "0.3.1", default-features = false }
+ratchet-core = { package = "solana-ratchet-core", path = "../ratchet-core", version = "0.3.2" }
+ratchet-anchor = { package = "solana-ratchet-anchor", path = "../ratchet-anchor", version = "0.3.2", default-features = false }
 wasm-bindgen.workspace = true
 serde_json.workspace = true
 

@@ -258,7 +258,7 @@ fn split_path_account(path: &str) -> (&str, Option<&str>) {
     }
 }
 
-/// Lift parsing failure into a plain Result<ProgramSurface> for callers
+/// Lift parsing failure into a plain `Result<ProgramSurface>` for callers
 /// that already have a JSON string and don't want to chain.
 pub fn normalize_str(json: &str) -> Result<ProgramSurface> {
     let idl: QuasarIdl =

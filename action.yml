@@ -48,7 +48,7 @@ inputs:
   version:
     description: 'Git ref (branch, tag, or commit) of ratchet to install. Ignored if ratchet is already on PATH.'
     required: false
-    default: 'v0.3.1'
+    default: 'v0.3.2'
 
 outputs:
   exit-code:

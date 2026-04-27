@@ -5,6 +5,70 @@ All notable changes to ratchet are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and ratchet adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] — 2026-04-27
+
+Quasar support — `ratchet readiness` and `ratchet check-upgrade` now
+work end-to-end against Quasar projects, not just Anchor.
+
+Quasar's IDL JSON is structurally distinct from Anchor's (variable-
+length discriminators, untagged `IdlType` union, struct-only
+typedefs, no cross-program PDAs), so this release ships a real
+parser + normaliser in `ratchet-quasar` rather than relying on
+Anchor passthrough. Both frameworks lower into the same
+`ProgramSurface` IR; every existing R-rule and P-rule applies
+identically once normalised.
+
+### Added
+- `ratchet_quasar::QuasarIdl` deserialisation types matching
+  `blueshift-gg/quasar`'s `schema/src/lib.rs`.
+- `ratchet_quasar::load_quasar_idl(path)` and
+  `parse_quasar_idl_str(json)` loaders.
+- `ratchet_quasar::normalize(QuasarIdl) -> Result<ProgramSurface>`
+  with discriminator padding to ratchet's 8-byte slot, account ↔
+  typedef join, and untagged-type-union mapping.
+- `ratchet_quasar::check_pair_readiness(surface, ctx)` —
+  preflight counterpart to the existing diff-mode `check_pair`.
+- CLI `--quasar` flag on `ratchet readiness` and
+  `ratchet check-upgrade`. Auto-detects `Quasar.toml` in the
+  current working directory; status banner suppressed under
+  `--json`.
+- `examples/quasar/` — committed `escrow.json` + `escrow.v2.json`
+  IDL fixtures shaped to match `quasar build` output. Used as
+  README demo artefacts and integration-test inputs.
+- `crates/ratchet-quasar/tests/integration.rs` — end-to-end suite
+  covering parse + normalise + readiness + diff against the
+  committed fixtures.
+- `action-quasar.yml` — drop-in GitHub Action for Quasar projects.
+  Same input shape as `action.yml` minus the Anchor-specific RPC
+  fetch flags.
+- `docs/quasar-integration.md` — rewritten roadmap covering
+  today's IDL JSON path, the in-flight binary `__QUASAR_SCHEMA`
+  format (Quasar PR #177), and the eventual compiler-pass
+  integration once upstream's plugin API matures.
+
+### Changed
+- README "Status" block rewritten — accurate counts (22 rules,
+  R + P split), Quasar adapter alongside Anchor, LiteSVM and
+  Squads modes correctly listed (the previous "coming next"
+  section had been stale since v0.2.0).
+- SKILL.md frontmatter widened to "Solana programs (Anchor and
+  Quasar)" so agent loaders surface ratchet for Quasar projects.
+  New "Anchor or Quasar?" subsection in the decision tree.
+- `action.yml` default version → `v0.3.2`.
+
+### Notes
+- P003 / P004 (default-discriminator-pin) intentionally do not
+  fire on Quasar surfaces. Quasar devs always assign
+  discriminators explicitly (`#[instruction(discriminator = N)]`),
+  so the "is this the Anchor sha256 default?" check has no
+  semantic meaning — the padded discriminator never matches.
+  Documented inline in the normaliser and in
+  `docs/quasar-integration.md`.
+- Workspace version bumps across all eight crates for dep-pin
+  alignment. No source changes in `ratchet-core`,
+  `ratchet-lock`, `ratchet-source`, `ratchet-svm`,
+  `ratchet-squads`, or `ratchet-wasm`.
+
 ## [0.3.1] — 2026-04-24
 
 Slimmer dependency surface for library consumers.
